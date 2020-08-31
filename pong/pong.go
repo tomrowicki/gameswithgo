@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"gameswithgo/noise"
 	"github.com/veandco/go-sdl2/sdl"
 	"math"
 	"time"
@@ -70,6 +71,62 @@ type ball struct {
 	color color
 }
 
+func lerp(b1, b2 byte, pct float32) byte {
+	return byte(float32(b1) + pct*(float32(b2)-float32(b1)))
+}
+
+func colorLerp(c1, c2 color, pct float32) color {
+	return color{lerp(c1.r, c2.r, pct), lerp(c1.g, c2.g, pct), lerp(c1.b, c2.b, pct)}
+}
+
+func getGradient(c1, c2 color) []color {
+	result := make([]color, 256)
+	for i := range result {
+		pct := float32(i) / float32(255)
+		result[i] = colorLerp(c1, c2, pct)
+	}
+	return result
+}
+
+func getDualGradient(c1, c2, c3, c4 color) []color {
+	result := make([]color, 256)
+	for i := range result {
+		pct := float32(i) / float32(255)
+		if pct < 0.5 {
+			result[i] = colorLerp(c1, c2, pct*float32(2))
+		} else {
+			result[i] = colorLerp(c3, c4, pct*float32(1.5)-float32(0.5))
+		}
+	}
+	return result
+}
+
+func clamp(min, max, v int) int {
+	if v < min {
+		v = min
+	} else if v > max {
+		v = max
+	}
+	return v
+}
+
+func rescaleAndDraw(noise []float32, min, max float32, gradient []color, w,h int) []byte {
+	result := make([]byte, w*h*4)
+	scale := 255.0 / (max - min)
+	offset := min * scale
+
+	for i := range noise {
+		noise[i] = noise[i]*scale - offset
+
+		c := gradient[clamp(0, 255, int(noise[i]))]
+		p := i * 4
+		result[p] = c.r
+		result[p+1] = c.g
+		result[p+2] = c.b
+	}
+	return result
+}
+
 func drawNumber(pos pos, color color, size int, num int, pixels []byte) {
 	startX := int(pos.x) - (size*3)/2
 	startY := int(pos.y) - (size*5)/2
@@ -123,14 +180,14 @@ func (ball *ball) update(leftPaddle *paddle, rightPaddle *paddle, elapsedTime fl
 		state = start
 	}
 
-	if ball.x - ball.radius < leftPaddle.x+leftPaddle.w/2 {
+	if ball.x-ball.radius < leftPaddle.x+leftPaddle.w/2 {
 		if ball.y > leftPaddle.y-leftPaddle.h/2 && ball.y < leftPaddle.y+leftPaddle.h/2 {
 			ball.xv = -ball.xv
 			ball.x = leftPaddle.x + leftPaddle.w/2.0 + ball.radius
 		}
 	}
 
-	if ball.x + ball.radius > rightPaddle.x-rightPaddle.w/2 {
+	if ball.x+ball.radius > rightPaddle.x-rightPaddle.w/2 {
 		if ball.y > rightPaddle.y-rightPaddle.h/2 && ball.y < rightPaddle.y+rightPaddle.h/2 {
 			ball.xv = -ball.xv
 			ball.x = rightPaddle.x - rightPaddle.w/2 - ball.radius
@@ -148,7 +205,7 @@ type paddle struct {
 }
 
 // calculates a value between two extremes, given its relative distance to them(?) expressed in percent
-func lerp(a float32, b float32, pct float32) float32 {
+func flerp(a float32, b float32, pct float32) float32 {
 	return a + pct*(b-a)
 }
 
@@ -162,7 +219,7 @@ func (paddle *paddle) draw(pixels []byte) {
 		}
 	}
 
-	numX := lerp(paddle.x, getCenter().x, 0.2)
+	numX := flerp(paddle.x, getCenter().x, 0.2)
 	drawNumber(pos{numX, 35}, paddle.color, 10, paddle.score, pixels)
 }
 
@@ -226,7 +283,7 @@ func main() {
 	defer tex.Destroy()
 
 	var controllerHandlers []*sdl.GameController
-	for i:=0; i<sdl.NumJoysticks(); i++ {
+	for i := 0; i < sdl.NumJoysticks(); i++ {
 		controllerHandlers = append(controllerHandlers, sdl.GameControllerOpen(i))
 		defer controllerHandlers[i].Close()
 	}
@@ -239,6 +296,10 @@ func main() {
 	ball := ball{pos{300, 300}, 20, 400, 400, color{255, 255, 255}}
 
 	keyState := sdl.GetKeyboardState()
+
+	noize, min, max := noise.MakeNoise(noise.FBM, .01, 0.5, 2, 3, winWidth, winHeight)
+	gradient := getGradient(color{255, 0,0}, color{0,0,0})
+	noisePixels := rescaleAndDraw(noize, min,max,gradient, winWidth,winHeight)
 
 	var frameStart time.Time
 	var elapsedTime float32
@@ -267,14 +328,16 @@ func main() {
 		} else if state == start {
 			if keyState[sdl.SCANCODE_SPACE] != 0 {
 				if player1.score == 3 || player2.score == 3 {
-				player1.score = 0
-				player2.score = 0
+					player1.score = 0
+					player2.score = 0
 				}
 				state = play
 			}
 		}
 
-		clear(pixels)
+		for i:= range noisePixels {
+			pixels[i] = noisePixels[i]
+		}
 		player1.draw(pixels)
 		player2.draw(pixels)
 		ball.draw(pixels)
@@ -286,7 +349,7 @@ func main() {
 		elapsedTime = float32(time.Since(frameStart).Seconds())
 		// in case too small amount of time passes before each subsequent iteration, 0.005 limits to 200fps
 		if elapsedTime < 0.005 {
-			sdl.Delay(5 - uint32(elapsedTime * 1000.0))
+			sdl.Delay(5 - uint32(elapsedTime*1000.0))
 			elapsedTime = float32(time.Since(frameStart).Seconds())
 		}
 	}
