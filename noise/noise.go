@@ -1,6 +1,7 @@
 package noise
 
 import (
+	"math"
 	"runtime"
 	"sync"
 )
@@ -45,11 +46,10 @@ func Fbm2(x, y, frequency, lacunarity, gain float32, octaves int) float32 {
 
 // MakeNoise generates a 2d block of noise
 func MakeNoise(noiseType NoiseType, frequency, lacunarity, gain float32, octaves, w, h int) (noise []float32, min, max float32) {
-	mutex := &sync.Mutex{}
 
 	noise = make([]float32, w*h)
-	min = float32(9999.0)
-	max = float32(-9999.0)
+	min = float32(math.MaxFloat32)
+	max = float32(-math.MaxFloat32)
 
 	numRoutines := runtime.NumCPU()
 	//numRoutines := 1
@@ -57,9 +57,14 @@ func MakeNoise(noiseType NoiseType, frequency, lacunarity, gain float32, octaves
 	wg.Add(numRoutines)
 	batchSize := len(noise) / numRoutines
 
+	// each routine puts in one min and one max at a time
+	minMaxChan := make(chan float32, numRoutines * 2)
+
 	for i := 0; i < numRoutines; i++ {
 		go func(i int) {
 			defer wg.Done()
+			innerMin := float32(math.MaxFloat32)
+			innerMax := float32(-math.MaxFloat32)
 			start := i * batchSize
 			end := start + batchSize - 1
 			for j := start; j < end; j++ {
@@ -72,19 +77,28 @@ func MakeNoise(noiseType NoiseType, frequency, lacunarity, gain float32, octaves
 					noise[j] = Fbm2(float32(x), float32(y), frequency, lacunarity, gain, octaves)
 				}
 
-				if noise[j] < min || noise[j] > max {
-					mutex.Lock()
-					if noise[j] < min {
-						min = noise[j]
-					} else if noise[j] > max {
-						max = noise[j]
-					}
-					mutex.Unlock()
+				if noise[j] < innerMin {
+					innerMin = noise[j]
+				} else if noise[j] > innerMax {
+					innerMax = noise[j]
 				}
 			}
+
+			minMaxChan <- innerMin
+			minMaxChan <- innerMax
+
 		}(i)
 	}
 	wg.Wait()
+	close(minMaxChan)
+
+	for v := range  minMaxChan {
+		if v < min {
+			min = v
+		} else if v > max {
+			max = v
+		}
+	}
 	return noise, min, max
 }
 
