@@ -88,52 +88,74 @@ func (balloon *balloon) getCircle() (x, y, r float32) {
 	return x, y, r
 }
 
-func (balloon *balloon) update(elapsedTime float32, currMouseState, prevMouseState mouseState,
-	audioState *audioState) {
+func updateBalloons(balloons []*balloon, elapsedTime float32, currMouseState, prevMouseState mouseState,
+	audioState *audioState) []*balloon {
 
 	numAnimations := 16
-	animationElapsed := float32(time.Since(balloon.explosionStart).Seconds() * 1000)
-	// counting from bottom right
-	animationIndex := numAnimations - 1 - int(animationElapsed/balloon.explosionInterval)
-	if animationIndex < 0 {
-		balloon.exploding = false
-		balloon.exploded = true
-	}
+	balloonClicked := false
+	balloonsExploded := false
 
-	// registering lmb click
-	if !prevMouseState.leftButton && currMouseState.leftButton {
-		x, y, r := balloon.getCircle()
-		mouseX := currMouseState.x
-		mouseY := currMouseState.y
-		xDiff := float32(mouseX) - x
-		yDiff := float32(mouseY) - y
-		dist := float32(math.Sqrt(float64(xDiff*xDiff + yDiff*yDiff)))
-		if dist < r {
-			sdl.ClearQueuedAudio(audioState.deviceID)
-			sdl.QueueAudio(audioState.deviceID, audioState.explosionBytes)
-			// the most quirky way to "push play"
-			sdl.PauseAudioDevice(audioState.deviceID, false)
-			balloon.exploding = true
-			balloon.explosionStart = time.Now()
+	for i := len(balloons) - 1; i >= 0; i-- {
+		balloon := balloons[i]
+
+		if balloon.exploding {
+			animationElapsed := float32(time.Since(balloon.explosionStart).Seconds() * 1000)
+			// counting from bottom right
+			animationIndex := numAnimations - 1 - int(animationElapsed/balloon.explosionInterval)
+			if animationIndex < 0 {
+				balloon.exploding = false
+				balloon.exploded = true
+				balloonsExploded = true
+			}
 		}
+		// registering lmb click
+		if !balloonClicked && !prevMouseState.leftButton && currMouseState.leftButton {
+			x, y, r := balloon.getCircle()
+			mouseX := currMouseState.x
+			mouseY := currMouseState.y
+			xDiff := float32(mouseX) - x
+			yDiff := float32(mouseY) - y
+			dist := float32(math.Sqrt(float64(xDiff*xDiff + yDiff*yDiff)))
+			if dist < r {
+				balloonClicked = true
+				sdl.ClearQueuedAudio(audioState.deviceID)
+				sdl.QueueAudio(audioState.deviceID, audioState.explosionBytes)
+				// the most quirky way to "push play"
+				sdl.PauseAudioDevice(audioState.deviceID, false)
+				balloon.exploding = true
+				balloon.explosionStart = time.Now()
+			}
+		}
+
+		// calculating new position
+		p := vec3.Add(balloon.pos, vec3.Mult(balloon.dir, elapsedTime))
+
+		if p.X < 0 || p.X > float32(winWidth) {
+			balloon.dir.X = -balloon.dir.X
+		}
+
+		if p.Y < 0 || p.Y > float32(winHeight) {
+			balloon.dir.Y = -balloon.dir.Y
+		}
+
+		if p.Z < 0 || p.Z > float32(winDepth) {
+			balloon.dir.Z = -balloon.dir.Z
+		}
+
+		balloon.pos = vec3.Add(balloon.pos, vec3.Mult(balloon.dir, elapsedTime))
 	}
 
-	// calculating new position
-	p := vec3.Add(balloon.pos, vec3.Mult(balloon.dir, elapsedTime))
-
-	if p.X < 0 || p.X > float32(winWidth) {
-		balloon.dir.X = -balloon.dir.X
+	if balloonsExploded {
+		// empty slice that starts where the other one does; improves performance
+		filteredBalloons := balloons[0:0]
+		for _, balloon := range balloons {
+			if !balloon.exploded {
+				filteredBalloons = append(filteredBalloons, balloon)
+			}
+		}
+		balloons = filteredBalloons
 	}
-
-	if p.Y < 0 || p.Y > float32(winHeight) {
-		balloon.dir.Y = -balloon.dir.Y
-	}
-
-	if p.Z < 0 || p.Z > float32(winDepth) {
-		balloon.dir.Z = -balloon.dir.Z
-	}
-
-	balloon.pos = vec3.Add(balloon.pos, vec3.Mult(balloon.dir, elapsedTime))
+	return balloons
 }
 
 func (balloon *balloon) draw(renderer *sdl.Renderer) {
@@ -365,9 +387,8 @@ func main() {
 
 		renderer.Copy(cloudTexture, nil, nil)
 
-		for _, balloon := range balloons {
-			balloon.update(elapsedTime, currentMouseState, prevMouseState, &audioState)
-		}
+		balloons = updateBalloons(balloons, elapsedTime, currentMouseState, prevMouseState, &audioState)
+
 		sort.Stable(balloonArray(balloons))
 		for _, balloon := range balloons {
 			balloon.draw(renderer)
