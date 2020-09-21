@@ -2,6 +2,7 @@
 package apt
 
 import (
+	"fmt"
 	"gameswithgo/noise"
 	"math"
 	"math/rand"
@@ -84,6 +85,15 @@ func NewOpLerp() *OpLerp {
 }
 
 func (op *OpLerp) Eval(x, y float32) float32 {
+	if op.Children[0] == nil {
+		println("child 0 is nil")
+	}
+	if op.Children[1] == nil {
+		println("child 1 is nil")
+	}
+	if op.Children[2] == nil {
+		println("child 2 is nil")
+	}
 	a := op.Children[0].Eval(x, y)
 	b := op.Children[1].Eval(x, y)
 	pct := op.Children[2].Eval(x, y)
@@ -120,6 +130,12 @@ func (op *OpMinus) Eval(x, y float32) float32 {
 }
 
 func (op *OpMinus) String() string {
+	if op.Children[0] == nil {
+		println("child 0 is nil")
+	}
+	if op.Children[1] == nil {
+		println("child 1 is nil")
+	}
 	return "( - " + op.Children[0].String() + " " + op.Children[1].String() + " )"
 }
 
@@ -152,6 +168,12 @@ func (op *OpDiv) Eval(x, y float32) float32 {
 }
 
 func (op *OpDiv) String() string {
+	if op.Children[0] == nil {
+		println("child 0 is nil")
+	}
+	if op.Children[1] == nil {
+		println("child 1 is nil")
+	}
 	return "( / " + op.Children[0].String() + " " + op.Children[1].String() + " )"
 }
 
@@ -164,6 +186,12 @@ func NewOpAtan2() *OpAtan2 {
 }
 
 func (op *OpAtan2) Eval(x, y float32) float32 {
+	if op.Children[0] == nil {
+		println("child 0 is nil")
+	}
+	if op.Children[1] == nil {
+		println("child 1 is nil")
+	}
 	return float32(math.Atan2(float64(op.Children[0].Eval(x, y)), float64(op.Children[1].Eval(x, y))))
 }
 
@@ -212,6 +240,9 @@ func NewOpCos() *OpCos {
 }
 
 func (op *OpCos) Eval(x, y float32) float32 {
+	if op.Children[0] == nil {
+		println("child 0 is nil")
+	}
 	return float32(math.Cos(float64(op.Children[0].Eval(x, y))))
 }
 
@@ -335,12 +366,15 @@ func GetNthNode(node Node, n, count int) (Node, int) {
 			return result, count
 		}
 	}
+	fmt.Println("Get nth node returns nil")
 	return nil, count
 }
 
+// FIXME something is not right with the mutation mechanism
 func Mutate(node Node) Node {
 	r := rand.Intn(13) // all kinds of nodes
 	var mutatedNode Node
+	// TODO maybe try tweaking this?
 	if r <= 10 { // non-leaf nodes
 		mutatedNode = GetRandomNode()
 	} else {
