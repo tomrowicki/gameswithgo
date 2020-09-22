@@ -17,6 +17,11 @@ type pixelResult struct {
 	index  int
 }
 
+type guiState struct {
+	zoom      bool
+	zoomImage *sdl.Texture
+}
+
 type audioState struct {
 	explosionBytes []byte
 	deviceID       sdl.AudioDeviceID
@@ -44,17 +49,17 @@ func NewPicture() *picture {
 	p.g = GetRandomNode()
 	p.b = GetRandomNode()
 
-	num := rand.Intn(20) + 5
+	num := rand.Intn(1) + 5
 	for i := 0; i < num; i++ {
 		p.r.AddRandom(GetRandomNode())
 	}
 
-	num = rand.Intn(20) + 5
+	num = rand.Intn(1) + 5
 	for i := 0; i < num; i++ {
 		p.g.AddRandom(GetRandomNode())
 	}
 
-	num = rand.Intn(20) + 5
+	num = rand.Intn(1) + 5
 	for i := 0; i < num; i++ {
 		p.b.AddRandom(GetRandomNode())
 	}
@@ -69,7 +74,64 @@ func NewPicture() *picture {
 	return p
 }
 
-func (p *picture) Mutate() {
+func (p *picture) pickRandomColor() Node {
+	r := rand.Intn(3)
+	switch r {
+	case 0:
+		return p.r
+	case 1:
+		return p.g
+	case 2:
+		return p.b
+	default:
+		panic("Wrong random value!")
+	}
+}
+
+func cross(a, b *picture) *picture {
+	aCopy := &picture{CopyTree(a.r, nil), CopyTree(a.g, nil), CopyTree(a.b, nil)}
+	aColor := aCopy.pickRandomColor()
+	bColor := b.pickRandomColor()
+
+	aIndex := rand.Intn(aColor.NodeCount())
+	aNode, _ := GetNthNode(aColor, aIndex, 0)
+
+	bIndex := rand.Intn(bColor.NodeCount())
+	bNode, _ := GetNthNode(bColor, bIndex, 0)
+	bNodeCopy := CopyTree(bNode, bNode.GetParent())
+
+	ReplaceNode(aNode, bNodeCopy)
+	return aCopy
+}
+
+func evolve(survivors []*picture) []*picture {
+	newPics := make([]*picture, numPics)
+	i := 0
+	for i < len(survivors) {
+		a := survivors[i]
+		b := survivors[rand.Intn(len(survivors))]
+		newPics[i] = cross(a, b)
+		i++
+	}
+
+	for i < len(newPics) {
+		a := survivors[rand.Intn(len(survivors))]
+		b := survivors[rand.Intn(len(survivors))]
+		newPics[i] = cross(a, b)
+		i++
+	}
+
+	for _, pic := range newPics {
+		r := rand.Intn(4)
+		for i := 0; i < r; i++ {
+			pic.mutate()
+		}
+	}
+
+	return newPics
+}
+
+func (p *picture) mutate() {
 	r := rand.Intn(3)
 	var nodeToMutate Node
 	switch r {
@@ -81,8 +143,13 @@ func (p *picture) Mutate() {
 		nodeToMutate = p.b
 	}
 
+	if nodeToMutate == nil {
+		panic("Node to mutate is nil!")
+	}
+
 	count := nodeToMutate.NodeCount()
 	r = rand.Intn(count)
+	//fmt.Println("mutation count and rand:", count, r)
 	nodeToMutate, count = GetNthNode(nodeToMutate, r, 0)
 	mutation := Mutate(nodeToMutate)
 	if nodeToMutate == p.r {
@@ -115,7 +182,7 @@ func pixelsToTexture(renderer *sdl.Renderer, pixels []byte, w, h int) *sdl.Textu
 	return tex
 }
 
-func aptToPixels(pic *picture, w, h int, renderer *sdl.Renderer) []byte {
+func aptToPixels(pic *picture, w, h int) []byte {
 	// -1.0 and 1.0
 	scale := float32(255 / 2)
 	offset := -1.0 * scale
@@ -175,24 +242,35 @@ func main() {
 	rand.Seed(time.Now().Unix())
 
 	picTrees := make([]*picture, numPics)
+	// generating new pictures
 	for i := range picTrees {
 		picTrees[i] = NewPicture()
 	}
 
 	picWidth := int(float32(winWidth/cols) * float32(.9)) // leaving some gap between pics (remaining 0.1)
-	picHeight := int(float32(winHeight/rows) * float32(.9))
+	picHeight := int(float32(winHeight/rows) * float32(.8))
 
 	pixelsChannel := make(chan pixelResult, numPics)
 	buttons := make([]*ImageButton, numPics)
+
+	evolveButtonTex := GetSinglePixelTex(renderer, sdl.Color{255, 255, 255, 0})
+	evolveRect := sdl.Rect{
+		int32(float32(winWidth)/2 - float32(picWidth)/2),
+		int32(float32(winHeight) - (float32(winHeight) * .10)),
+		int32(picWidth), int32(float32(winHeight) * .08)}
+	evolveButton := NewImageButton(renderer, evolveButtonTex, evolveRect, sdl.Color{255, 255, 255, 0})
+
+	// applying random functions and translating to pixels
 	for i := range picTrees {
 		go func(i int) {
-			pixels := aptToPixels(picTrees[i], picWidth, picHeight, renderer)
+			pixels := aptToPixels(picTrees[i], picWidth*2, picHeight*2)
 			pixelsChannel <- pixelResult{pixels, i}
 		}(i)
 	}
 
 	keyboardState := sdl.GetKeyboardState()
 	mouseState := GetMouseState()
+	state := guiState{false, nil}
 
 	// GAME LOOP
 	for {
@@ -209,35 +287,72 @@ func main() {
 			return
 		}
 
-		select {
-		case pixelsAndIndex, ok := <-pixelsChannel:
-			if ok {
-				tex := pixelsToTexture(renderer, pixelsAndIndex.pixels, picWidth, picHeight)
-				xi := pixelsAndIndex.index % cols
-				yi := (pixelsAndIndex.index - xi) / cols
-				x := int32(xi * picWidth)
-				y := int32(yi * picHeight)
-				xPad := int32(float32(winWidth) * .1 / float32(cols+1))
-				yPad := int32(float32(winHeight) * .1 / float32(rows+1))
-				x += xPad * (int32(xi) + 1)
-				y += yPad * (int32(yi) + 1)
-				rect := sdl.Rect{x, y, int32(picWidth), int32(picHeight)}
-				button := NewImageButton(renderer, tex, rect, sdl.Color{255, 255, 255, 0})
-				buttons[pixelsAndIndex.index] = button
-			}
-		default:
+		if !state.zoom {
 
-		}
-		renderer.Clear()
-		for _, button := range buttons {
-			if button != nil {
-				button.Update(mouseState)
-				if button.WasLeftClicked {
-					button.IsSelected = !button.IsSelected
+			select {
+			case pixelsAndIndex, ok := <-pixelsChannel:
+				if ok {
+					tex := pixelsToTexture(renderer, pixelsAndIndex.pixels, picWidth*2, picHeight*2)
+					xi := pixelsAndIndex.index % cols
+					yi := (pixelsAndIndex.index - xi) / cols
+					x := int32(xi * picWidth)
+					y := int32(yi * picHeight)
+					xPad := int32(float32(winWidth) * .1 / float32(cols+1))
+					yPad := int32(float32(winHeight) * .1 / float32(rows+1))
+					x += xPad * (int32(xi) + 1)
+					y += yPad * (int32(yi) + 1)
+					rect := sdl.Rect{x, y, int32(picWidth), int32(picHeight)}
+					button := NewImageButton(renderer, tex, rect, sdl.Color{255, 255, 255, 0})
+					buttons[pixelsAndIndex.index] = button
 				}
-				button.Draw(renderer)
+			default:
+
 			}
+			renderer.Clear()
+			for i, button := range buttons {
+				if button != nil {
+					button.Update(mouseState)
+					if button.WasLeftClicked {
+						button.IsSelected = !button.IsSelected
+					} else if button.WasRightClicked {
+						fmt.Println(picTrees[i])
+						zoomPixels := aptToPixels(picTrees[i], winWidth*2, winHeight*2)
+						zoomTex := pixelsToTexture(renderer, zoomPixels, winWidth*2, winHeight*2)
+						state.zoomImage = zoomTex
+						state.zoom = true
+					}
+					button.Draw(renderer)
+				}
+			}
+			evolveButton.Update(mouseState)
+			if evolveButton.WasLeftClicked {
+				selectedPictures := make([]*picture, 0)
+				for i, button := range buttons {
+					if button.IsSelected {
+						selectedPictures = append(selectedPictures, picTrees[i])
+					}
+				}
+				if len(selectedPictures) != 0 {
+					for i := range buttons {
+						buttons[i] = nil
+					}
+					picTrees = evolve(selectedPictures)
+					for i := range picTrees {
+						go func(i int) {
+							pixels := aptToPixels(picTrees[i], picWidth*2, picHeight*2)
+							pixelsChannel <- pixelResult{pixels, i}
+						}(i)
+					}
+				}
+			}
+			evolveButton.Draw(renderer)
+		} else {
+			if !mouseState.RightButton && mouseState.PrevRightButton {
+				state.zoom = false
+			}
+			renderer.Copy(state.zoomImage, nil, nil)
 		}
+
 		renderer.Present()
 
 		elapsedTime = float32(time.Since(frameStart).Seconds()) * 1000

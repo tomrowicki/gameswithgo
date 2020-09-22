@@ -2,10 +2,10 @@
 package apt
 
 import (
-	"fmt"
 	"gameswithgo/noise"
 	"math"
 	"math/rand"
+	"reflect"
 	"strconv"
 )
 
@@ -18,6 +18,7 @@ type Node interface {
 	AddLeaf(leaf Node) bool
 	NodeCount() int
 	GetChildren() []Node
+	SetChildren([]Node)
 }
 
 type BaseNode struct {
@@ -25,11 +26,11 @@ type BaseNode struct {
 	Children []Node
 }
 
-func (op *BaseNode) Eval(x, y float32) float32 {
+func (node *BaseNode) Eval(x, y float32) float32 {
 	panic("tried to call eval() on base node!")
 }
 
-func (op *BaseNode) String() string {
+func (node *BaseNode) String() string {
 	panic("tried to call string() on base node!")
 }
 
@@ -76,6 +77,10 @@ func (node *BaseNode) GetChildren() []Node {
 	return node.Children
 }
 
+func (node *BaseNode) SetChildren(children []Node) {
+	node.Children = children
+}
+
 type OpLerp struct {
 	BaseNode
 }
@@ -98,6 +103,10 @@ func (op *OpLerp) Eval(x, y float32) float32 {
 	b := op.Children[1].Eval(x, y)
 	pct := op.Children[2].Eval(x, y)
 	return a + pct*(b-a)
+}
+
+func (op *OpLerp) String() string {
+	return "( Lerp " + op.Children[0].String() + " " + op.Children[1].String() + " " + op.Children[2].String() + " )"
 }
 
 type OpPlus struct {
@@ -168,12 +177,6 @@ func (op *OpDiv) Eval(x, y float32) float32 {
 }
 
 func (op *OpDiv) String() string {
-	if op.Children[0] == nil {
-		println("child 0 is nil")
-	}
-	if op.Children[1] == nil {
-		println("child 1 is nil")
-	}
 	return "( / " + op.Children[0].String() + " " + op.Children[1].String() + " )"
 }
 
@@ -354,6 +357,37 @@ func GetRandomLeaf() Node {
 	panic("Get random leaf failed!")
 }
 
+func CopyTree(node Node, parent Node) Node {
+	// reflect.ValueOf(node).Elem().Type() // determining the type of a variable
+	nodeCopy := reflect.New(reflect.ValueOf(node).Elem().Type()).Interface().(Node) // blank nodeCopy of the same type
+	switch n:= node.(type) {
+	case *OpConstant:
+		nodeCopy.(*OpConstant).value = n.value
+	}
+	nodeCopy.SetParent(parent)
+	copyChildren := make([]Node, len(node.GetChildren()))
+	nodeCopy.SetChildren(copyChildren)
+	for i := range copyChildren {
+		copyChildren[i] = CopyTree(node.GetChildren()[i], nodeCopy)
+	}
+	return nodeCopy
+}
+
+func ReplaceNode(old Node, new Node) {
+	if old != nil && new != nil {
+
+		oldParent := old.GetParent()
+		if oldParent != nil {
+			for i, child := range oldParent.GetChildren() {
+				if child == old {
+					oldParent.GetChildren()[i] = new
+				}
+			}
+		}
+		new.SetParent(oldParent)
+	}
+}
+
 func GetNthNode(node Node, n, count int) (Node, int) {
 	if n == count {
 		return node, count
@@ -366,15 +400,12 @@ func GetNthNode(node Node, n, count int) (Node, int) {
 			return result, count
 		}
 	}
-	fmt.Println("Get nth node returns nil")
 	return nil, count
 }
 
-// FIXME something is not right with the mutation mechanism
 func Mutate(node Node) Node {
 	r := rand.Intn(13) // all kinds of nodes
 	var mutatedNode Node
-	// TODO maybe try tweaking this?
 	if r <= 10 { // non-leaf nodes
 		mutatedNode = GetRandomNode()
 	} else {
@@ -399,7 +430,7 @@ func Mutate(node Node) Node {
 		child.SetParent(mutatedNode)
 	}
 	// empty, nil children get replaced with leaves
-	for i, child := range node.GetChildren() {
+	for i, child := range mutatedNode.GetChildren() {
 		if child == nil {
 			leaf := GetRandomLeaf()
 			leaf.SetParent(mutatedNode)

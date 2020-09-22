@@ -32,8 +32,8 @@ func (mouseState *MouseState) Update() {
 	X, Y, mouseButtonState := sdl.GetMouseState()
 	mouseState.X = int(X)
 	mouseState.Y = int(Y)
-	mouseState.LeftButton = !((mouseButtonState * sdl.ButtonLMask()) == 0)
-	mouseState.RightButton = !((mouseButtonState * sdl.ButtonRMask()) == 0)
+	mouseState.LeftButton = !((mouseButtonState & sdl.ButtonLMask()) == 0)
+	mouseState.RightButton = !((mouseButtonState & sdl.ButtonRMask()) == 0)
 }
 
 type ImageButton struct {
@@ -80,4 +80,19 @@ func (button *ImageButton) Draw(renderer *sdl.Renderer) {
 		renderer.Copy(button.SelectedTex, nil, &borderRect)
 	}
 	renderer.Copy(button.Image, nil, &button.Rect)
+}
+
+func GetSinglePixelTex(renderer *sdl.Renderer, color sdl.Color) *sdl.Texture {
+	tex, err := renderer.CreateTexture(sdl.PIXELFORMAT_ABGR8888, sdl.TEXTUREACCESS_STATIC, 1,1)
+	if err != nil {
+		panic(err)
+	}
+	pixels := make([]byte,4)
+	pixels[0] = color.R
+	pixels[1] = color.G
+	pixels[2] = color.B
+	pixels[3] = color.A
+	// pitch = bytes per line
+	tex.Update(nil, pixels, 4)
+	return tex
 }
