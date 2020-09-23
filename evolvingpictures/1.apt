@@ -1,0 +1,3 @@
+R( / ( Atan ( - Y -0.497205436 ) ) ( Atan2 -0.962399960 ( Atan ( Atan2 0.401198506 -0.504276872 ) ) ) )
+G( Atan2 ( * ( Atan 0.753717303 ) X ) ( / ( Atan2 X ( Atan2 X 0.547849774 ) ) Y ) )
+B( Cos ( Sin ( Sin ( Atan2 Y ( Atan2 X ( Cos Y ) ) ) ) ) )

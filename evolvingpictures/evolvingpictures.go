@@ -5,7 +5,12 @@ import (
 	. "gameswithgo/evolvingpictures/apt"
 	. "gameswithgo/evolvingpictures/gui"
 	"github.com/veandco/go-sdl2/sdl"
+	"io/ioutil"
 	"math/rand"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -20,6 +25,7 @@ type pixelResult struct {
 type guiState struct {
 	zoom      bool
 	zoomImage *sdl.Texture
+	zoomTree  *picture
 }
 
 type audioState struct {
@@ -208,6 +214,34 @@ func aptToPixels(pic *picture, w, h int) []byte {
 	return pixels
 }
 
+func saveTree(p *picture) {
+	files, err := ioutil.ReadDir("./evolvingpictures")
+	if err != nil {
+		fmt.Println(err)
+	}
+	biggestNumber := 0
+	for _,f := range files {
+		name := f.Name()
+		if strings.HasSuffix(name,".apt") {
+			numberStr := strings.TrimSuffix(name, ".apt")
+			num, err := strconv.Atoi(numberStr)
+			if err == nil {
+				if num > biggestNumber {
+					biggestNumber = num
+				}
+			}
+
+		}
+	}
+	saveName := strconv.Itoa(biggestNumber+1) + ".apt"
+	file, err := os.Create(filepath.Join("evolvingpictures",saveName))
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer file.Close()
+	fmt.Fprintf(file, p.String())
+}
+
 func main() {
 	sdl.InitSubSystem(sdl.INIT_AUDIO)
 	window, err := sdl.CreateWindow("Evolving Pictures", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
@@ -239,6 +273,17 @@ func main() {
 
 	var elapsedTime float32
 
+	args := os.Args
+	if len(args) > 1 {
+		fileBytes, err := ioutil.ReadFile(args[1])
+		if err != nil {
+			panic(err)
+		}
+		fileStr := string(fileBytes)
+		BeginLexing(fileStr)
+		return
+	}
+
 	rand.Seed(time.Now().Unix())
 
 	picTrees := make([]*picture, numPics)
@@ -269,8 +314,10 @@ func main() {
 	}
 
 	keyboardState := sdl.GetKeyboardState()
+	prevKeyboardState := make([]uint8, len(keyboardState))
+
 	mouseState := GetMouseState()
-	state := guiState{false, nil}
+	state := guiState{false, nil, nil}
 
 	// GAME LOOP
 	for {
@@ -315,10 +362,11 @@ func main() {
 					if button.WasLeftClicked {
 						button.IsSelected = !button.IsSelected
 					} else if button.WasRightClicked {
-						fmt.Println(picTrees[i])
+						//fmt.Println(picTrees[i])
 						zoomPixels := aptToPixels(picTrees[i], winWidth*2, winHeight*2)
 						zoomTex := pixelsToTexture(renderer, zoomPixels, winWidth*2, winHeight*2)
 						state.zoomImage = zoomTex
+						state.zoomTree = picTrees[i]
 						state.zoom = true
 					}
 					button.Draw(renderer)
@@ -350,10 +398,16 @@ func main() {
 			if !mouseState.RightButton && mouseState.PrevRightButton {
 				state.zoom = false
 			}
+			if keyboardState[sdl.SCANCODE_S] == 0 && prevKeyboardState[sdl.SCANCODE_S] != 0 {
+				saveTree(state.zoomTree)
+			}
 			renderer.Copy(state.zoomImage, nil, nil)
 		}
 
 		renderer.Present()
+		for i, v := range keyboardState {
+			prevKeyboardState[i] = v
+		}
 
 		elapsedTime = float32(time.Since(frameStart).Seconds()) * 1000
 		//fmt.Println("ms per frame:", elapsedTime)
