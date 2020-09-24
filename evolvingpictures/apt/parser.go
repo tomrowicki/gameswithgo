@@ -2,6 +2,7 @@ package apt
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -28,14 +29,66 @@ type lexer struct {
 	tokens chan token
 }
 
-func parse(tokens chan token) Node {
+func stringToNode(s string) Node {
+	switch s {
+	case "+":
+		return NewOpPlus()
+	case "-":
+		return NewOpMinus()
+	case "*":
+		return NewOpMult()
+	case "/":
+		return NewOpDiv()
+	case "Atan2":
+		return NewOpAtan2()
+	case "Atan":
+		return NewOpAtan()
+	case "Cos":
+		return NewOpCos()
+	case "Sin":
+		return NewOpSin()
+	case "SimplexNoise":
+		return NewOpNoise()
+	case "Lerp":
+		return NewOpLerp()
+	case "X":
+		return NewOpX()
+	case "Y":
+		return NewOpY()
+	case "Picture":
+		return NewOpPicture()
+	default:
+		panic("Can't determine node from token: " + s)
+	}
+}
+
+func parse(tokens chan token, parent Node) Node {
 	for {
-		token, ok := <- tokens
+		token, ok := <-tokens
 		if !ok {
 			fmt.Println()
 			panic("no more tokens")
 		}
-		fmt.Print(token.value, ",")
+		switch token.typ {
+		case op:
+			n := stringToNode(token.value)
+			n.SetParent(parent)
+			for i := range n.GetChildren() {
+				n.GetChildren()[i] = parse(tokens, n)
+			}
+			return n
+		case constant:
+			n := NewOpConstant()
+			n.SetParent(parent)
+			v, err := strconv.ParseFloat(token.value, 32)
+			if err != nil {
+				panic("Error while parsing constant op.")
+			}
+			n.value = float32(v)
+			return n
+		case closeParen, openParen:
+			continue
+		}
 	}
 	return nil
 }
@@ -47,7 +100,7 @@ type stateFunc func(*lexer) stateFunc
 func BeginLexing(s string) Node {
 	l := &lexer{input: s, tokens: make(chan token, 100)}
 	go l.run()
-	return parse(l.tokens)
+	return parse(l.tokens, nil)
 }
 
 func (l *lexer) run() {
@@ -84,7 +137,7 @@ func lexOp(l *lexer) stateFunc {
 }
 
 func lexNumber(l *lexer) stateFunc {
-	l.accept("+-.")
+	l.accept("-.") // beginning of a number
 	digits := "0123456789"
 	l.acceptRun(digits)
 	if l.accept(".") {
@@ -100,16 +153,16 @@ func lexNumber(l *lexer) stateFunc {
 	return determineToken
 }
 
-func (l* lexer) accept(valid string) bool {
-	if strings.IndexRune(valid, l.next()) >=0 {
+func (l *lexer) accept(valid string) bool {
+	if strings.IndexRune(valid, l.next()) >= 0 {
 		return true
 	}
 	l.backup()
-	return  false
+	return false
 }
 
-func (l* lexer) acceptRun(valid string) {
-	for strings.IndexRune(valid, l.next()) >=0 {
+func (l *lexer) acceptRun(valid string) {
+	for strings.IndexRune(valid, l.next()) >= 0 {
 	}
 	l.backup()
 }
@@ -120,7 +173,7 @@ func isWhiteSpace(r rune) bool {
 
 // start as in the beginning of a floating point number
 func isStartOfNumber(r rune) bool {
-	return (r >= '0' && r <= '9') || r == '-' || r == '+' || r == '.'
+	return (r >= '0' && r <= '9') || r == '-' || r == '.'
 }
 
 func (l *lexer) emit(t tokenType) {

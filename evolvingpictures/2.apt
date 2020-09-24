@@ -1,3 +1,0 @@
-R( Atan ( Atan2 ( SimplexNoise 0.169892669 X ) ( Atan2 ( * X -0.875818729 ) ( / -0.167977512 0.755584478 ) ) ) )
-G( Sin ( Atan ( Atan2 ( - 0.748562813 ( Cos -0.883998811 ) ) ( + X Y ) ) ) )
-B( - ( Atan ( Cos ( SimplexNoise X -0.797710776 ) ) ) ( Lerp ( + 0.371783853 -0.509759009 ) X X ) )
