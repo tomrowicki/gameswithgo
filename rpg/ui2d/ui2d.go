@@ -19,6 +19,13 @@ var renderer *sdl.Renderer
 var textureAtlas *sdl.Texture
 var textureIndex map[Tile][]sdl.Rect
 
+
+var prevKeyboardState []uint8
+var keyboardState []uint8
+
+var centerX int
+var centerY int
+
 func loadTextureIndex() {
 	textureIndex = make(map[Tile][]sdl.Rect)
 	infile, err := os.Open("rpg/ui2d/assets/atlas-index.txt")
@@ -129,26 +136,98 @@ func init() {
 
 	textureAtlas = imgFileToTexture("rpg/ui2d/assets/tiles.png")
 	loadTextureIndex()
+
+	keyboardState = sdl.GetKeyboardState()
+	prevKeyboardState = make([]uint8, len(keyboardState))
+	for i, v := range keyboardState {
+		prevKeyboardState[i] = v
+	}
+
+	centerX = -1
+	centerY = -1
 }
 
 type UI2d struct {
 }
 
-func (ui *UI2d) DrawThenGetInput(level *Level) Input{
+func (ui *UI2d) Draw(level *Level) {
+	if centerX == -1 && centerY == -1 {
+		centerX = level.Player.X
+		centerY = level.Player.Y
+	}
+
+	//dx := level.Player.X - centerX
+	//dy := level.Player.Y - centerY
+	//distFromCenter := math.Sqrt(float64(dx*dx+dy*dy))
+	limit := 5
+	if level.Player.X > centerX + limit {
+		centerX++
+	} else if level.Player.X < centerX - limit {
+		centerX--
+	} else if level.Player.Y > centerY + limit {
+		centerY++
+	} else if level.Player.Y < centerY - limit {
+		centerY--
+	}
+
+	// used for camera movement
+	offsetX := int32((winWidth/2) - centerX*32)
+	offsetY := int32((winHeight/2) - centerY*32)
+
+	renderer.Clear()
 	rand.Seed(1)
 	for y, row := range level.Map {
 		for x, tile := range row {
 			if tile != Blank {
 				srcRects := textureIndex[tile]
 				srcRect := srcRects[rand.Intn(len(srcRects))]
-				dstRect := sdl.Rect{int32(x * 32), int32(y * 32), 32, 32}
+				dstRect := sdl.Rect{int32(x * 32) + offsetX, int32(y * 32) + offsetY, 32, 32}
 				renderer.Copy(textureAtlas, &srcRect, &dstRect)
 			}
 		}
 	}
 	renderer.Copy(textureAtlas, &sdl.Rect{21 * 32, 59 * 32, 32, 32},
-	&sdl.Rect{int32(level.Player.X) *32, int32(level.Player.Y) * 32, 32, 32})
+	&sdl.Rect{int32(level.Player.X) *32 + offsetX, int32(level.Player.Y) * 32 + offsetY, 32, 32})
 	renderer.Present()
+}
 
-	// TODO return Input
+func (ui *UI2d) GetInput() *Input {
+	// Comment from YT
+	//I'm not sure if you discover this later, but for the keyboard events: the event has "Type" and "Repeat" members.  So, if "Type" is "sdl.KEYDOWN" and "Repeat" is 0, then this is the initial press of that key.
+	//
+	//if e.Type == "sdl.KEYDOWN" && e.Repeat == 0 {
+	//	if e.Keysym.Sym == <Whatever> {
+	//		<do stuff>
+	//	}
+	//}
+
+	for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
+		switch event.(type) {
+		case *sdl.QuitEvent:
+			return &Input{Quit}
+		}
+	}
+
+	var input Input
+	if keyboardState[sdl.SCANCODE_UP] == 0 && prevKeyboardState[sdl.SCANCODE_UP] != 0 {
+		input.Typ = Up
+	}
+	if keyboardState[sdl.SCANCODE_DOWN] == 0 && prevKeyboardState[sdl.SCANCODE_DOWN] != 0 {
+		input.Typ = Down
+	}
+	if keyboardState[sdl.SCANCODE_LEFT] == 0 && prevKeyboardState[sdl.SCANCODE_LEFT] != 0 {
+		input.Typ = Left
+	}
+	if keyboardState[sdl.SCANCODE_RIGHT] == 0 && prevKeyboardState[sdl.SCANCODE_RIGHT] != 0 {
+		input.Typ = Right
+	}
+
+	for i, v := range keyboardState {
+		prevKeyboardState[i] = v
+	}
+
+	if input.Typ != None {
+		return &input
+	}
+	return nil
 }
