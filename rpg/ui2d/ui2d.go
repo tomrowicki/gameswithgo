@@ -251,21 +251,19 @@ func (ui *ui) Run() {
 			}
 		default:
 		}
-
+		// TODO make a function to ask if a key has been pressed
 		if sdl.GetKeyboardFocus() == ui.window || sdl.GetMouseFocus() == ui.window {
-
 			var input Input
-
-			if ui.keyboardState[sdl.SCANCODE_UP] == 0 && ui.prevKeyboardState[sdl.SCANCODE_UP] != 0 {
+			if ui.keyboardState[sdl.SCANCODE_UP] != 0 && ui.prevKeyboardState[sdl.SCANCODE_UP] == 0 {
 				input.Typ = Up
 			}
-			if ui.keyboardState[sdl.SCANCODE_DOWN] == 0 && ui.prevKeyboardState[sdl.SCANCODE_DOWN] != 0 {
+			if ui.keyboardState[sdl.SCANCODE_DOWN] != 0 && ui.prevKeyboardState[sdl.SCANCODE_DOWN] == 0 {
 				input.Typ = Down
 			}
-			if ui.keyboardState[sdl.SCANCODE_LEFT] == 0 && ui.prevKeyboardState[sdl.SCANCODE_LEFT] != 0 {
+			if ui.keyboardState[sdl.SCANCODE_LEFT] != 0 && ui.prevKeyboardState[sdl.SCANCODE_LEFT] == 0 {
 				input.Typ = Left
 			}
-			if ui.keyboardState[sdl.SCANCODE_RIGHT] == 0 && ui.prevKeyboardState[sdl.SCANCODE_RIGHT] != 0 {
+			if ui.keyboardState[sdl.SCANCODE_RIGHT] != 0 && ui.prevKeyboardState[sdl.SCANCODE_RIGHT] == 0 {
 				input.Typ = Right
 			}
 			if ui.keyboardState[sdl.SCANCODE_S] == 0 && ui.prevKeyboardState[sdl.SCANCODE_S] != 0 {

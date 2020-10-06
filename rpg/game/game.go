@@ -57,18 +57,75 @@ type Pos struct {
 
 type Entity struct {
 	Pos
+	Name string
+	Rune rune
+}
+
+type Character struct {
+	Entity
+	Hitpoints    int
+	Strength     int
+	Speed        float64
+	ActionPoints float64
 }
 
 type Player struct {
-	Entity
+	Character
 }
 
 type Level struct {
 	Map      [][]Tile
-	Player   Player
+	Player   *Player
 	Monsters map[Pos]*Monster
 	Debug    map[Pos]bool
 }
+
+type Attackable interface {
+	GetActionPoints() float64
+	SetActionPoints(float64)
+	GetHitpoints() int
+	SetHitpoints(int)
+	GetAttackPower() int
+}
+
+func (c *Character) GetActionPoints() float64 {
+	return c.ActionPoints
+}
+
+func (c *Character) SetActionPoints(apoints float64)  {
+	c.ActionPoints = apoints
+}
+
+func (c *Character) GetHitpoints() int {
+	return c.Hitpoints
+}
+
+func (c *Character) SetHitpoints(hpoints int) {
+	c.Hitpoints = hpoints
+}
+
+func (c *Character) GetAttackPower() int {
+	return c.Strength
+}
+
+func Attack(a1, a2 Attackable)  {
+	a1.SetActionPoints(a1.GetActionPoints() - 1)
+	a2.SetHitpoints(a2.GetHitpoints() - a1.GetAttackPower())
+
+	if a2.GetHitpoints() > 0 {
+		a2.SetActionPoints(a2.GetActionPoints() - 1)
+		a1.SetHitpoints(a1.GetHitpoints() - a2.GetAttackPower())
+	}
+}
+
+//func Attack(c1, c2 *Character) {
+//	c1.ActionPoints -= 1
+//	c2.Hitpoints -= c1.Strength
+//	if c2.Hitpoints > 0 {
+//		c2.ActionPoints -= 1
+//		c1.Hitpoints -= c2.Strength
+//	}
+//}
 
 func loadLevelFromFile(filename string) *Level {
 	file, err := os.Open(filename)
@@ -88,6 +145,15 @@ func loadLevelFromFile(filename string) *Level {
 		index++
 	}
 	level := &Level{}
+	// Player init
+	level.Player = &Player{}
+	level.Player.Strength = 20
+	level.Player.Hitpoints = 20
+	level.Player.ActionPoints = 0
+	level.Player.Name = "GoMan"
+	level.Player.Rune = '@'
+	level.Player.Speed = 1.0
+
 	level.Map = make([][]Tile, len(levelLines))
 	level.Monsters = make(map[Pos]*Monster)
 	for i := range level.Map {
@@ -163,9 +229,20 @@ func checkDoor(level *Level, pos Pos) {
 }
 
 func (player *Player) Move(to Pos, level *Level) {
-	_, exists := level.Monsters[to]
+	monster, exists := level.Monsters[to]
 	if !exists {
 		player.Pos = to
+	} else {
+		Attack(&level.Player.Character, &monster.Character)
+		fmt.Println("Player attacked monster")
+		fmt.Println(level.Player.Hitpoints, monster.Hitpoints)
+		if monster.Hitpoints <= 0 {
+			delete(level.Monsters, monster.Pos)
+		}
+		if level.Player.Hitpoints <= 0 {
+			fmt.Println("YOU DIED")
+			panic("YOU DIED") // exit properly?
+		}
 	}
 }
 
