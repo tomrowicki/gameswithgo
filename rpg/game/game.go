@@ -77,6 +77,7 @@ type Level struct {
 	Map      [][]Tile
 	Player   *Player
 	Monsters map[Pos]*Monster
+	Events   []string
 	Debug    map[Pos]bool
 }
 
@@ -92,7 +93,7 @@ func (c *Character) GetActionPoints() float64 {
 	return c.ActionPoints
 }
 
-func (c *Character) SetActionPoints(apoints float64)  {
+func (c *Character) SetActionPoints(apoints float64) {
 	c.ActionPoints = apoints
 }
 
@@ -108,7 +109,7 @@ func (c *Character) GetAttackPower() int {
 	return c.Strength
 }
 
-func Attack(a1, a2 Attackable)  {
+func Attack(a1, a2 Attackable) {
 	a1.SetActionPoints(a1.GetActionPoints() - 1)
 	a2.SetHitpoints(a2.GetHitpoints() - a1.GetAttackPower())
 
@@ -145,6 +146,8 @@ func loadLevelFromFile(filename string) *Level {
 		index++
 	}
 	level := &Level{}
+	level.Events = make([]string,0)
+
 	// Player init
 	level.Player = &Player{}
 	level.Player.Strength = 20
@@ -235,6 +238,7 @@ func (player *Player) Move(to Pos, level *Level) {
 	} else {
 		Attack(&level.Player.Character, &monster.Character)
 		fmt.Println("Player attacked monster")
+		level.Events = append(level.Events, "Player attacked monster")
 		fmt.Println(level.Player.Hitpoints, monster.Hitpoints)
 		if monster.Hitpoints <= 0 {
 			delete(level.Monsters, monster.Pos)
