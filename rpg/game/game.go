@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"strconv"
 )
 
 type Game struct {
@@ -78,6 +79,7 @@ type Level struct {
 	Player   *Player
 	Monsters map[Pos]*Monster
 	Events   []string
+	EventPos int
 	Debug    map[Pos]bool
 }
 
@@ -112,11 +114,6 @@ func (c *Character) GetAttackPower() int {
 func Attack(a1, a2 Attackable) {
 	a1.SetActionPoints(a1.GetActionPoints() - 1)
 	a2.SetHitpoints(a2.GetHitpoints() - a1.GetAttackPower())
-
-	if a2.GetHitpoints() > 0 {
-		a2.SetActionPoints(a2.GetActionPoints() - 1)
-		a1.SetHitpoints(a1.GetHitpoints() - a2.GetAttackPower())
-	}
 }
 
 //func Attack(c1, c2 *Character) {
@@ -127,6 +124,15 @@ func Attack(a1, a2 Attackable) {
 //		c1.Hitpoints -= c2.Strength
 //	}
 //}
+
+func (level *Level) AddEvent(event string) {
+	level.Events[level.EventPos] = event
+
+	level.EventPos++
+	if level.EventPos == len(level.Events) {
+		level.EventPos = 0
+	}
+}
 
 func loadLevelFromFile(filename string) *Level {
 	file, err := os.Open(filename)
@@ -146,12 +152,13 @@ func loadLevelFromFile(filename string) *Level {
 		index++
 	}
 	level := &Level{}
-	level.Events = make([]string,0)
+	level.Events = make([]string, 10)
+	level.EventPos = 0
 
 	// Player init
 	level.Player = &Player{}
 	level.Player.Strength = 20
-	level.Player.Hitpoints = 20
+	level.Player.Hitpoints = 50
 	level.Player.ActionPoints = 0
 	level.Player.Name = "GoMan"
 	level.Player.Rune = '@'
@@ -238,9 +245,10 @@ func (player *Player) Move(to Pos, level *Level) {
 	} else {
 		Attack(&level.Player.Character, &monster.Character)
 		fmt.Println("Player attacked monster")
-		level.Events = append(level.Events, "Player attacked monster")
+		level.AddEvent("Player attacked monster")
 		fmt.Println(level.Player.Hitpoints, monster.Hitpoints)
 		if monster.Hitpoints <= 0 {
+			level.AddEvent("Player kills " + monster.Name)
 			delete(level.Monsters, monster.Pos)
 		}
 		if level.Player.Hitpoints <= 0 {
@@ -395,6 +403,7 @@ func (level *Level) astar(start Pos, goal Pos) []Pos {
 func (game *Game) Run() {
 	fmt.Println("Starting ...")
 
+	count := 0
 	for _, lchan := range game.LevelChans {
 		lchan <- game.Level
 	}
@@ -407,7 +416,12 @@ func (game *Game) Run() {
 				return
 			}
 
+			fmt.Println("Input:",input)
+
 			game.handleInput(input)
+
+			game.Level.AddEvent("Move:" + strconv.Itoa(count))
+			count++
 
 			for _, monster := range game.Level.Monsters {
 				monster.Update(game.Level)

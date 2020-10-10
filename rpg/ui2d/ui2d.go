@@ -37,6 +37,8 @@ type ui struct {
 	fontMedium *ttf.Font
 	fontLarge  *ttf.Font
 
+	eventBackground *sdl.Texture
+
 	str2TexSmall map[string]*sdl.Texture
 	str2TexMed   map[string]*sdl.Texture
 	str2TexLarge map[string]*sdl.Texture
@@ -78,7 +80,7 @@ func NewUI(inputChan chan *Input, levelChan chan *Level) *ui {
 	ui.centerX = -1
 	ui.centerY = -1
 
-	ui.fontSmall, err = ttf.OpenFont("rpg/ui2d/assets/Kingthings_Foundation.ttf", 24)
+	ui.fontSmall, err = ttf.OpenFont("rpg/ui2d/assets/Kingthings_Foundation.ttf", 18)
 	if err != nil {
 		panic(err)
 	}
@@ -92,6 +94,9 @@ func NewUI(inputChan chan *Input, levelChan chan *Level) *ui {
 	if err != nil {
 		panic(err)
 	}
+
+	ui.eventBackground = ui.GetSinglePixelTex(sdl.Color{0,0,0,128})
+	ui.eventBackground.SetBlendMode(sdl.BLENDMODE_BLEND)
 
 	return ui
 }
@@ -305,16 +310,55 @@ func (ui *ui) Draw(level *Level) {
 	ui.renderer.Copy(ui.textureAtlas, &playerSrcRect,
 		&sdl.Rect{int32(level.Player.X)*32 + offsetX, int32(level.Player.Y)*32 + offsetY, 32, 32})
 
-	for i, event := range level.Events {
-		tex := ui.stringToTexture(event, sdl.Color{255, 0, 0, 0}, FontLarge)
-		_,_,w,h,err := tex.Query()
-		if err != nil {
-			panic(err)
+	textStartY := int32(float64(ui.winHeight) * .75)
+	textWidth := int32(float64(ui.winWidth) * .25)
+
+	// TODO scroll from bottom up
+	// TODO add a border/background
+	ui.renderer.Copy(ui.eventBackground, nil, &sdl.Rect{0, textStartY, textWidth, int32(ui.winHeight) - textStartY})
+
+	i := level.EventPos
+	for  {
+		event := level.Events[i]
+		if event != "" {
+			tex := ui.stringToTexture(event, sdl.Color{255, 0, 0, 0}, FontSmall)
+			_, _, w, h, err := tex.Query()
+			if err != nil {
+				panic(err)
+			}
+			ui.renderer.Copy(tex, nil, &sdl.Rect{0, int32(i*18) + textStartY, w, h})
 		}
-		ui.renderer.Copy(tex,nil, &sdl.Rect{0,int32(i*64),w,h})
+		i = (i+1) % len(level.Events)
+		if i == level.EventPos {
+			break
+		}
 	}
 
 	ui.renderer.Present()
+}
+
+func (ui *ui) keyDownOnce(key uint8) bool {
+	return ui.keyboardState[key] != 0 && ui.prevKeyboardState[key] == 0
+}
+
+// key pressed then released
+func (ui *ui) keyPressed(key uint8) bool {
+	return ui.keyboardState[key] == 0 && ui.prevKeyboardState[key] != 0
+}
+
+func (ui *ui) GetSinglePixelTex(color sdl.Color) *sdl.Texture {
+	tex, err := ui.renderer.CreateTexture(sdl.PIXELFORMAT_ABGR8888, sdl.TEXTUREACCESS_STATIC, 1,1)
+	if err != nil {
+		panic(err)
+	}
+	pixels := make([]byte,4)
+	pixels[0] = color.R
+	pixels[1] = color.G
+	pixels[2] = color.B
+	pixels[3] = color.A
+	// pitch = bytes per line
+	tex.Update(nil, pixels, 4)
+	return tex
 }
 
 func (ui *ui) Run() {
@@ -345,24 +389,24 @@ func (ui *ui) Run() {
 			}
 		default:
 		}
-		// TODO make a function to ask if a key has been pressed
 		if sdl.GetKeyboardFocus() == ui.window || sdl.GetMouseFocus() == ui.window {
 			var input Input
-			if ui.keyboardState[sdl.SCANCODE_UP] != 0 && ui.prevKeyboardState[sdl.SCANCODE_UP] == 0 {
+			if ui.keyDownOnce(sdl.SCANCODE_UP) {
 				input.Typ = Up
 			}
-			if ui.keyboardState[sdl.SCANCODE_DOWN] != 0 && ui.prevKeyboardState[sdl.SCANCODE_DOWN] == 0 {
+			if ui.keyDownOnce(sdl.SCANCODE_DOWN) {
 				input.Typ = Down
 			}
-			if ui.keyboardState[sdl.SCANCODE_LEFT] != 0 && ui.prevKeyboardState[sdl.SCANCODE_LEFT] == 0 {
+			if ui.keyDownOnce(sdl.SCANCODE_LEFT) {
 				input.Typ = Left
 			}
-			if ui.keyboardState[sdl.SCANCODE_RIGHT] != 0 && ui.prevKeyboardState[sdl.SCANCODE_RIGHT] == 0 {
+			if ui.keyDownOnce(sdl.SCANCODE_RIGHT) {
 				input.Typ = Right
 			}
-			if ui.keyboardState[sdl.SCANCODE_S] == 0 && ui.prevKeyboardState[sdl.SCANCODE_S] != 0 {
-				input.Typ = Search
-			}
+			//if ui.keyboardState[sdl.SCANCODE_S] == 0 && ui.prevKeyboardState[sdl.SCANCODE_S] != 0 {
+			//	input.Typ = Search
+			//}
+
 
 			for i, v := range ui.keyboardState {
 				ui.prevKeyboardState[i] = v

@@ -15,8 +15,8 @@ func NewRat(p Pos) *Monster {
 				Name: "Rat",
 				Rune: 'R',
 			},
-			Hitpoints:    5,
-			Strength:     5,
+			Hitpoints:    500,
+			Strength:     1,
 			Speed:        2.0,
 			ActionPoints: 0.0,
 		},
@@ -31,8 +31,8 @@ func NewSpider(p Pos) *Monster {
 			Name: "Spider",
 			Rune: 'S',
 		},
-		Hitpoints:    10,
-		Strength:     10,
+		Hitpoints:    1000,
+		Strength:     1,
 		Speed:        1.0,
 		ActionPoints: 0.0,
 	}}
@@ -44,6 +44,12 @@ func (m *Monster) Update(level *Level) {
 
 	apInt := int(m.ActionPoints)
 	positions := level.astar(m.Pos, playerPos)
+
+	if len(positions) == 0 {
+		m.Pass()
+		return
+	}
+
 	moveIndex := 1
 	for i := 0; i < apInt; i++ {
 		if moveIndex < len(positions) {
@@ -54,6 +60,10 @@ func (m *Monster) Update(level *Level) {
 	}
 }
 
+func (m *Monster) Pass() {
+	m.ActionPoints -= m.Speed
+}
+
 func (m *Monster) Move(to Pos, level *Level) {
 	_, exists := level.Monsters[to]
 
@@ -62,11 +72,13 @@ func (m *Monster) Move(to Pos, level *Level) {
 		delete(level.Monsters, m.Pos)
 		level.Monsters[to] = m
 		m.Pos = to
-	} else {
+	} else if to == level.Player.Pos{
+		level.AddEvent(m.Name + " attacks player!")
 		Attack(&m.Character, &level.Player.Character)
 		fmt.Println("Monster attacked player")
 		fmt.Println(m.Hitpoints, level.Player.Hitpoints)
 		if m.Hitpoints <= 0 {
+			level.AddEvent("You killed the " + m.Name)
 			delete(level.Monsters, m.Pos)
 		}
 		if level.Player.Hitpoints <= 0 {
