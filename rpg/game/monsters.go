@@ -19,6 +19,7 @@ func NewRat(p Pos) *Monster {
 			Strength:     1,
 			Speed:        2.0,
 			ActionPoints: 0.0,
+			SightRange: 10,
 		},
 	}
 }
@@ -35,6 +36,7 @@ func NewSpider(p Pos) *Monster {
 		Strength:     1,
 		Speed:        1.0,
 		ActionPoints: 0.0,
+		SightRange: 10,
 	}}
 }
 
@@ -73,12 +75,10 @@ func (m *Monster) Move(to Pos, level *Level) {
 		level.Monsters[to] = m
 		m.Pos = to
 	} else if to == level.Player.Pos{
-		level.AddEvent(m.Name + " attacks player!")
-		Attack(&m.Character, &level.Player.Character)
+		level.Attack(&m.Character, &level.Player.Character)
 		fmt.Println("Monster attacked player")
 		fmt.Println(m.Hitpoints, level.Player.Hitpoints)
 		if m.Hitpoints <= 0 {
-			level.AddEvent("You killed the " + m.Name)
 			delete(level.Monsters, m.Pos)
 		}
 		if level.Player.Hitpoints <= 0 {

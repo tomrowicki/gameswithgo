@@ -41,15 +41,19 @@ type Input struct {
 	LevelChannel chan *Level
 }
 
-type Tile rune
+type Tile struct {
+	Rune    rune
+	Visible bool
+	// visited bool
+}
 
 const (
-	StoneWall  Tile = '#'
-	DirtFloor  Tile = '.'
-	ClosedDoor Tile = '|'
-	OpenDoor   Tile = '/'
-	Blank      Tile = 0
-	Pending    Tile = -1
+	StoneWall  rune = '#'
+	DirtFloor       = '.'
+	ClosedDoor      = '|'
+	OpenDoor        = '/'
+	Blank           = 0
+	Pending         = -1
 )
 
 type Pos struct {
@@ -68,6 +72,7 @@ type Character struct {
 	Strength     int
 	Speed        float64
 	ActionPoints float64
+	SightRange   int
 }
 
 type Player struct {
@@ -83,47 +88,22 @@ type Level struct {
 	Debug    map[Pos]bool
 }
 
-type Attackable interface {
-	GetActionPoints() float64
-	SetActionPoints(float64)
-	GetHitpoints() int
-	SetHitpoints(int)
-	GetAttackPower() int
-}
-
-func (c *Character) GetActionPoints() float64 {
-	return c.ActionPoints
-}
-
-func (c *Character) SetActionPoints(apoints float64) {
-	c.ActionPoints = apoints
-}
-
-func (c *Character) GetHitpoints() int {
-	return c.Hitpoints
-}
-
-func (c *Character) SetHitpoints(hpoints int) {
-	c.Hitpoints = hpoints
-}
-
-func (c *Character) GetAttackPower() int {
-	return c.Strength
-}
-
-func Attack(a1, a2 Attackable) {
-	a1.SetActionPoints(a1.GetActionPoints() - 1)
-	a2.SetHitpoints(a2.GetHitpoints() - a1.GetAttackPower())
-}
-
-//func Attack(c1, c2 *Character) {
-//	c1.ActionPoints -= 1
-//	c2.Hitpoints -= c1.Strength
-//	if c2.Hitpoints > 0 {
-//		c2.ActionPoints -= 1
-//		c1.Hitpoints -= c2.Strength
-//	}
+//func Attack(a1, a2 Attackable) {
+//	a1.SetActionPoints(a1.GetActionPoints() - 1)
+//	a2.SetHitpoints(a2.GetHitpoints() - a1.GetAttackPower())
 //}
+
+func (level *Level) Attack(c1, c2 *Character) {
+	c1.ActionPoints--
+	c2.Hitpoints -= c1.Strength
+	if c2.Hitpoints > 0 {
+		level.AddEvent(c1.Name + " Attacked " + c2.Name + " for " + strconv.Itoa(c1.Strength))
+		c2.ActionPoints -= 1
+		c1.Hitpoints -= c2.Strength
+	} else {
+		level.AddEvent(c1.Name + " Killed " + c2.Name)
+	}
+}
 
 func (level *Level) AddEvent(event string) {
 	level.Events[level.EventPos] = event
@@ -132,6 +112,57 @@ func (level *Level) AddEvent(event string) {
 	if level.EventPos == len(level.Events) {
 		level.EventPos = 0
 	}
+}
+
+func bresenham(start Pos, end Pos) []Pos {
+	result := make([]Pos, 0)
+	steep := math.Abs(float64(end.Y-start.Y)) > math.Abs(float64(end.X-start.X)) // whether the line skews toward y
+	if steep {
+		start.X, start.Y = start.Y, start.X
+		end.X, end.Y = end.Y, end.X
+		//temp := start.X
+		//start.X = start.Y
+		//start.Y = temp
+
+		//temp = end.X
+		//end.X = end.Y
+		//end.Y = temp
+	}
+	if start.X > end.X {
+		start.X, end.X = end.X, start.X
+		start.Y, end.Y = end.Y, start.Y
+
+		//temp := start.X
+		//start.X = end.X
+		//end.X = temp
+		//
+		//temp = start.Y
+		//start.Y = end.Y
+		//end.Y = temp
+	}
+
+	deltaX := end.X - start.X
+	deltaY := int(math.Abs(float64(end.Y - start.Y)))
+	err := 0
+	y := start.Y
+	ystep := 1
+	if start.Y >= end.Y {
+		ystep = -1
+	}
+
+	for x := start.X; x < end.X; x++ {
+		if steep {
+			result = append(result, Pos{y, x})
+		} else {
+			result = append(result, Pos{x, y})
+		}
+		err += deltaY
+		if 2*err >= deltaX {
+			y += ystep
+			err -= deltaX
+		}
+	}
+	return result
 }
 
 func loadLevelFromFile(filename string) *Level {
@@ -152,6 +183,7 @@ func loadLevelFromFile(filename string) *Level {
 		index++
 	}
 	level := &Level{}
+	level.Debug = make(map[Pos]bool)
 	level.Events = make([]string, 10)
 	level.EventPos = 0
 
@@ -163,6 +195,7 @@ func loadLevelFromFile(filename string) *Level {
 	level.Player.Name = "GoMan"
 	level.Player.Rune = '@'
 	level.Player.Speed = 1.0
+	level.Player.SightRange = 10
 
 	level.Map = make([][]Tile, len(levelLines))
 	level.Monsters = make(map[Pos]*Monster)
@@ -176,25 +209,25 @@ func loadLevelFromFile(filename string) *Level {
 			var t Tile
 			switch c {
 			case ' ', '\t', '\n', '\r':
-				t = Blank
+				t.Rune = Blank
 			case '#':
-				t = StoneWall
+				t.Rune = StoneWall
 			case '|':
-				t = ClosedDoor
+				t.Rune = ClosedDoor
 			case '/':
-				t = OpenDoor
+				t.Rune = OpenDoor
 			case '.':
-				t = DirtFloor
+				t.Rune = DirtFloor
 			case '@':
 				level.Player.X = x
 				level.Player.Y = y
-				t = Pending
+				t.Rune = Pending
 			case 'R':
 				level.Monsters[Pos{x, y}] = NewRat(Pos{x, y})
-				t = Pending
+				t.Rune = Pending
 			case 'S':
 				level.Monsters[Pos{x, y}] = NewSpider(Pos{x, y})
-				t = Pending
+				t.Rune = Pending
 			default:
 				panic("Invalid character in map!")
 			}
@@ -204,7 +237,7 @@ func loadLevelFromFile(filename string) *Level {
 
 	for y, row := range level.Map {
 		for x, tile := range row {
-			if tile == Pending {
+			if tile.Rune == Pending {
 				level.Map[y][x] = level.bfsFloor(Pos{x, y})
 			}
 		}
@@ -219,42 +252,69 @@ func inRange(level *Level, pos Pos) bool {
 
 func canWalk(level *Level, pos Pos) bool {
 	if inRange(level, pos) {
-
 		t := level.Map[pos.Y][pos.X]
-		switch t {
+		switch t.Rune {
 		case StoneWall, ClosedDoor, Blank:
 			return false
-		default:
-			return true
 		}
+		_, exists := level.Monsters[pos]
+		if exists {
+			return false
+		}
+		return true
 	}
 	return false
 }
 
+func canSeeThrough(level *Level, pos Pos) bool {
+	t := level.Map[pos.Y][pos.X]
+	switch t.Rune {
+	case StoneWall, ClosedDoor, Blank:
+		return false
+	default:
+		return true
+	}
+}
+
 func checkDoor(level *Level, pos Pos) {
 	t := level.Map[pos.Y][pos.X]
-	if t == ClosedDoor {
-		level.Map[pos.Y][pos.X] = OpenDoor
+	if t.Rune == ClosedDoor {
+		level.Map[pos.Y][pos.X].Rune = OpenDoor
 	}
 }
 
 func (player *Player) Move(to Pos, level *Level) {
-	monster, exists := level.Monsters[to]
-	if !exists {
-		player.Pos = to
-	} else {
-		Attack(&level.Player.Character, &monster.Character)
-		fmt.Println("Player attacked monster")
-		level.AddEvent("Player attacked monster")
-		fmt.Println(level.Player.Hitpoints, monster.Hitpoints)
+	player.Pos = to
+	for _, row := range level.Map {
+		for _, tile := range row {
+			tile.Visible = false
+		}
+	}
+
+	line := bresenham(player.Pos, Pos{player.Pos.X, player.Pos.Y - player.SightRange})
+	for _, pos := range line {
+		if canSeeThrough(level, pos) {
+			level.Map[pos.Y][pos.X].Visible = true
+		} else {
+			break
+		}
+	}
+}
+
+func (level *Level) resolveMovement(pos Pos) {
+	monster, exists := level.Monsters[pos]
+	if exists {
+		level.Attack(&level.Player.Character, &monster.Character)
 		if monster.Hitpoints <= 0 {
-			level.AddEvent("Player kills " + monster.Name)
 			delete(level.Monsters, monster.Pos)
 		}
 		if level.Player.Hitpoints <= 0 {
-			fmt.Println("YOU DIED")
-			panic("YOU DIED") // exit properly?
+			panic("YOU DIED")
 		}
+	} else if canWalk(level, pos) {
+		level.Player.Move(pos, level)
+	} else {
+		checkDoor(level, pos)
 	}
 }
 
@@ -264,35 +324,20 @@ func (game *Game) handleInput(input *Input) {
 	switch input.Typ {
 	case Up:
 		newPos := Pos{p.X, p.Y - 1}
-		if canWalk(level, newPos) {
-			level.Player.Move(newPos, level)
-		} else {
-			checkDoor(level, Pos{p.X, p.Y - 1})
-		}
+		level.resolveMovement(newPos)
 	case Down:
 		newPos := Pos{p.X, p.Y + 1}
-		if canWalk(level, newPos) {
-			level.Player.Move(newPos, level)
-		} else {
-			checkDoor(level, Pos{p.X, p.Y + 1})
-		}
+		level.resolveMovement(newPos)
 	case Left:
 		newPos := Pos{p.X - 1, p.Y}
-		if canWalk(level, newPos) {
-			level.Player.Move(newPos, level)
-		} else {
-			checkDoor(level, Pos{p.X - 1, p.Y})
-		}
+		level.resolveMovement(newPos)
 	case Right:
 		newPos := Pos{p.X + 1, p.Y}
-		if canWalk(level, newPos) {
-			level.Player.Move(newPos, level)
-		} else {
-			checkDoor(level, Pos{p.X + 1, p.Y})
-		}
-	case Search:
-		//bfs(ui, Level, Level.Player.Pos)
-		level.astar(level.Player.Pos, Pos{3, 2})
+		level.resolveMovement(newPos)
+
+	//case Search:
+	//	//bfs(ui, Level, Level.Player.Pos)
+	//	level.astar(level.Player.Pos, Pos{3, 2})
 	case CloseWindow:
 		close(input.LevelChannel)
 		chanIndex := 0
@@ -340,9 +385,9 @@ func (level *Level) bfsFloor(start Pos) Tile {
 		current := frontier[0]
 
 		currentTile := level.Map[current.Y][current.X]
-		switch currentTile {
+		switch currentTile.Rune {
 		case DirtFloor:
-			return DirtFloor
+			return Tile{DirtFloor, false}
 		default:
 		}
 
@@ -354,7 +399,7 @@ func (level *Level) bfsFloor(start Pos) Tile {
 			}
 		}
 	}
-	return DirtFloor
+	return Tile{DirtFloor, false}
 }
 
 func (level *Level) astar(start Pos, goal Pos) []Pos {
@@ -416,11 +461,15 @@ func (game *Game) Run() {
 				return
 			}
 
-			fmt.Println("Input:",input)
+			//p := game.Level.Player.Pos
+			//line := bresenham(p, Pos{p.X + 5, p.Y + 5})
+			//for _, pos := range line {
+			//	game.Level.Debug[pos] = true
+			//}
 
 			game.handleInput(input)
 
-			game.Level.AddEvent("Move:" + strconv.Itoa(count))
+			//game.Level.AddEvent("Move:" + strconv.Itoa(count))
 			count++
 
 			for _, monster := range game.Level.Monsters {

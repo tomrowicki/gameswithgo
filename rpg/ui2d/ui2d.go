@@ -21,7 +21,7 @@ type ui struct {
 
 	// tile of interest = x or y px from image / 32
 	textureAtlas *sdl.Texture
-	textureIndex map[Tile][]sdl.Rect
+	textureIndex map[rune][]sdl.Rect
 
 	prevKeyboardState []uint8
 	keyboardState     []uint8
@@ -80,7 +80,8 @@ func NewUI(inputChan chan *Input, levelChan chan *Level) *ui {
 	ui.centerX = -1
 	ui.centerY = -1
 
-	ui.fontSmall, err = ttf.OpenFont("rpg/ui2d/assets/Kingthings_Foundation.ttf", 18)
+	ui.fontSmall, err = ttf.OpenFont("rpg/ui2d/assets/Kingthings_Foundation.ttf", int(float64(ui.winHeight)*.02))
+	//ui.fontSmall, err = ttf.OpenFont("rpg/ui2d/assets/Kingthings_Foundation.ttf", 18)
 	if err != nil {
 		panic(err)
 	}
@@ -154,7 +155,7 @@ func (ui *ui) stringToTexture(s string, color sdl.Color, size FontSize) *sdl.Tex
 }
 
 func (ui *ui) loadTextureIndex() {
-	ui.textureIndex = make(map[Tile][]sdl.Rect)
+	ui.textureIndex = make(map[rune][]sdl.Rect)
 	infile, err := os.Open("rpg/ui2d/assets/atlas-index.txt")
 	if err != nil {
 		panic(err)
@@ -164,7 +165,7 @@ func (ui *ui) loadTextureIndex() {
 	for scanner.Scan() {
 		line := scanner.Text()
 		line = strings.TrimSpace(line)
-		tileRune := Tile(line[0]) // turning a character from file to a proper tile!
+		tileRune := rune(line[0]) // turning a character from file to a proper tile!
 		xy := line[1:]
 		splitXYC := strings.Split(xy, ",") // x, y, count (of tiles of the same type, e.g. different walls)
 		x, err := strconv.ParseInt(strings.TrimSpace(splitXYC[0]), 10, 64)
@@ -284,9 +285,9 @@ func (ui *ui) Draw(level *Level) {
 	ui.r.Seed(1)
 	for y, row := range level.Map {
 		for x, tile := range row {
-			if tile != Blank {
+			if tile.Rune != Blank && tile.Visible{
 
-				srcRects := ui.textureIndex[tile]
+				srcRects := ui.textureIndex[tile.Rune]
 				srcRect := srcRects[ui.r.Intn(len(srcRects))]
 				dstRect := sdl.Rect{int32(x*32) + offsetX, int32(y*32) + offsetY, 32, 32}
 
@@ -302,22 +303,24 @@ func (ui *ui) Draw(level *Level) {
 		}
 	}
 	for pos, monster := range level.Monsters {
-		monsterSrcRect := ui.textureIndex[Tile(monster.Rune)][0]
-		ui.renderer.Copy(ui.textureAtlas, &monsterSrcRect,
-			&sdl.Rect{int32(pos.X)*32 + offsetX, int32(pos.Y)*32 + offsetY, 32, 32})
+		if level.Map[pos.Y][pos.X].Visible {
+			monsterSrcRect := ui.textureIndex[monster.Rune][0]
+			ui.renderer.Copy(ui.textureAtlas, &monsterSrcRect,
+				&sdl.Rect{int32(pos.X)*32 + offsetX, int32(pos.Y)*32 + offsetY, 32, 32})
+		}
 	}
 	playerSrcRect := ui.textureIndex['@'][0]
 	ui.renderer.Copy(ui.textureAtlas, &playerSrcRect,
 		&sdl.Rect{int32(level.Player.X)*32 + offsetX, int32(level.Player.Y)*32 + offsetY, 32, 32})
 
-	textStartY := int32(float64(ui.winHeight) * .75)
+	textStartY := int32(float64(ui.winHeight) * .68) // allows to add spacing between lines
 	textWidth := int32(float64(ui.winWidth) * .25)
 
-	// TODO scroll from bottom up
-	// TODO add a border/background
 	ui.renderer.Copy(ui.eventBackground, nil, &sdl.Rect{0, textStartY, textWidth, int32(ui.winHeight) - textStartY})
 
 	i := level.EventPos
+	count := 0
+	_, fontSizeY,_ := ui.fontSmall.SizeUTF8("A") // mosta letters have the same height but there are exceptions
 	for  {
 		event := level.Events[i]
 		if event != "" {
@@ -326,9 +329,10 @@ func (ui *ui) Draw(level *Level) {
 			if err != nil {
 				panic(err)
 			}
-			ui.renderer.Copy(tex, nil, &sdl.Rect{0, int32(i*18) + textStartY, w, h})
+			ui.renderer.Copy(tex, nil, &sdl.Rect{5, int32(count*fontSizeY) + textStartY, w, h})
 		}
 		i = (i+1) % len(level.Events)
+		count++
 		if i == level.EventPos {
 			break
 		}
