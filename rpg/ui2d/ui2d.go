@@ -96,7 +96,7 @@ func NewUI(inputChan chan *Input, levelChan chan *Level) *ui {
 		panic(err)
 	}
 
-	ui.eventBackground = ui.GetSinglePixelTex(sdl.Color{0,0,0,128})
+	ui.eventBackground = ui.GetSinglePixelTex(sdl.Color{0, 0, 0, 128})
 	ui.eventBackground.SetBlendMode(sdl.BLENDMODE_BLEND)
 
 	return ui
@@ -285,23 +285,32 @@ func (ui *ui) Draw(level *Level) {
 	ui.r.Seed(1)
 	for y, row := range level.Map {
 		for x, tile := range row {
-			if tile.Rune != Blank && tile.Visible{
 
+			if tile.Rune != Blank {
 				srcRects := ui.textureIndex[tile.Rune]
 				srcRect := srcRects[ui.r.Intn(len(srcRects))]
-				dstRect := sdl.Rect{int32(x*32) + offsetX, int32(y*32) + offsetY, 32, 32}
 
-				pos := Pos{x, y}
-				if level.Debug[pos] { // does map containt the position to draw?
-					ui.textureAtlas.SetColorMod(128, 0, 0) // enhances color on every copy(?)
-				} else {
-					ui.textureAtlas.SetColorMod(255, 255, 255)
+				if tile.Visible || tile.Seen {
+					dstRect := sdl.Rect{int32(x*32) + offsetX, int32(y*32) + offsetY, 32, 32}
+					pos := Pos{x, y}
+					if level.Debug[pos] { // does map containt the position to draw?
+						ui.textureAtlas.SetColorMod(128, 0, 0) // enhances color on every copy(?)
+					} else if tile.Seen && !tile.Visible {
+						ui.textureAtlas.SetColorMod(128, 128, 128)
+					} else {
+						ui.textureAtlas.SetColorMod(255, 255, 255)
+					}
+					ui.renderer.Copy(ui.textureAtlas, &srcRect, &dstRect)
+					// TODO different variants for overlay images?
+					if tile.OverlayRune != Blank {
+						srcRect := ui.textureIndex[tile.OverlayRune][0]
+						ui.renderer.Copy(ui.textureAtlas, &srcRect, &dstRect)
+					}
 				}
-
-				ui.renderer.Copy(ui.textureAtlas, &srcRect, &dstRect)
 			}
 		}
 	}
+	ui.textureAtlas.SetColorMod(255, 255, 255) // prevents monster being drawn greyed-out due to fog of war mechanic
 	for pos, monster := range level.Monsters {
 		if level.Map[pos.Y][pos.X].Visible {
 			monsterSrcRect := ui.textureIndex[monster.Rune][0]
@@ -320,8 +329,8 @@ func (ui *ui) Draw(level *Level) {
 
 	i := level.EventPos
 	count := 0
-	_, fontSizeY,_ := ui.fontSmall.SizeUTF8("A") // mosta letters have the same height but there are exceptions
-	for  {
+	_, fontSizeY, _ := ui.fontSmall.SizeUTF8("A") // mosta letters have the same height but there are exceptions
+	for {
 		event := level.Events[i]
 		if event != "" {
 			tex := ui.stringToTexture(event, sdl.Color{255, 0, 0, 0}, FontSmall)
@@ -331,7 +340,7 @@ func (ui *ui) Draw(level *Level) {
 			}
 			ui.renderer.Copy(tex, nil, &sdl.Rect{5, int32(count*fontSizeY) + textStartY, w, h})
 		}
-		i = (i+1) % len(level.Events)
+		i = (i + 1) % len(level.Events)
 		count++
 		if i == level.EventPos {
 			break
@@ -351,11 +360,11 @@ func (ui *ui) keyPressed(key uint8) bool {
 }
 
 func (ui *ui) GetSinglePixelTex(color sdl.Color) *sdl.Texture {
-	tex, err := ui.renderer.CreateTexture(sdl.PIXELFORMAT_ABGR8888, sdl.TEXTUREACCESS_STATIC, 1,1)
+	tex, err := ui.renderer.CreateTexture(sdl.PIXELFORMAT_ABGR8888, sdl.TEXTUREACCESS_STATIC, 1, 1)
 	if err != nil {
 		panic(err)
 	}
-	pixels := make([]byte,4)
+	pixels := make([]byte, 4)
 	pixels[0] = color.R
 	pixels[1] = color.G
 	pixels[2] = color.B
@@ -410,7 +419,6 @@ func (ui *ui) Run() {
 			//if ui.keyboardState[sdl.SCANCODE_S] == 0 && ui.prevKeyboardState[sdl.SCANCODE_S] != 0 {
 			//	input.Typ = Search
 			//}
-
 
 			for i, v := range ui.keyboardState {
 				ui.prevKeyboardState[i] = v
