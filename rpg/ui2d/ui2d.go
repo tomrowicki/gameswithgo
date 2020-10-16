@@ -267,6 +267,7 @@ func (ui *ui) Draw(level *Level) {
 	//dy := level.Player.Y - centerY
 	//distFromCenter := math.Sqrt(float64(dx*dx+dy*dy))
 	limit := 5
+	// TODO fix centering, so the portals work
 	if level.Player.X > ui.centerX+limit {
 		ui.centerX++
 	} else if level.Player.X < ui.centerX-limit {

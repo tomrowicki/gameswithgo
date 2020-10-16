@@ -20,7 +20,8 @@ func main() {
 	//
 	//rpgGame.Run()
 
-	rpg := game.NewGame(1, "rpg/game/maps/level1.map")
+	//rpg := game.NewGame(1, "rpg/game/maps/level1.map")
+	rpg := game.NewGame(1)
 
 	go func() { rpg.Run() }()
 	ui := ui2d.NewUI(rpg.InputChan, rpg.LevelChans[0])
