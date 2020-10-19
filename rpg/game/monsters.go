@@ -6,6 +6,16 @@ type Monster struct {
 	Character
 }
 
+func (m *Monster) Kill(level *Level) {
+	delete(level.Monsters, m.Pos)
+	groundItems := level.Items[m.Pos]
+	for _, item := range m.Items {
+		item.Pos = m.Pos
+		groundItems = append(groundItems, item)
+	}
+	level.Items[m.Pos] = groundItems
+}
+
 func NewRat(p Pos) *Monster {
 	//return &Monster{Pos:p, Rune:'R', Name: "Rat", Hitpoints:5, Strength:5, Speed:1.5, ActionPoints:0.0}
 	return &Monster{
@@ -20,6 +30,7 @@ func NewRat(p Pos) *Monster {
 			Speed:        2.0,
 			ActionPoints: 0.0,
 			SightRange: 10,
+			Items:[]*Item{NewHelmet(p)},
 		},
 	}
 }
@@ -37,6 +48,7 @@ func NewSpider(p Pos) *Monster {
 		Speed:        1.0,
 		ActionPoints: 0.0,
 		SightRange: 10,
+		Items: []*Item{NewSword(p)},
 	}}
 }
 

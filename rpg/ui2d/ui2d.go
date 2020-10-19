@@ -15,7 +15,7 @@ import (
 
 type sounds struct {
 	openingDoors []*mix.Chunk
-	footsteps  []*mix.Chunk
+	footsteps    []*mix.Chunk
 }
 
 func playRandomSound(chunks []*mix.Chunk, volume int) {
@@ -374,6 +374,17 @@ func (ui *ui) Draw(level *Level) {
 				&sdl.Rect{int32(pos.X)*32 + offsetX, int32(pos.Y)*32 + offsetY, 32, 32})
 		}
 	}
+
+	for pos, items := range level.Items {
+		if level.Map[pos.Y][pos.X].Visible {
+			for _, item := range items {
+				itemSrcRect := ui.textureIndex[item.Rune][0]
+				ui.renderer.Copy(ui.textureAtlas, &itemSrcRect,
+					&sdl.Rect{int32(pos.X)*32 + offsetX, int32(pos.Y)*32 + offsetY, 32, 32})
+			}
+		}
+	}
+
 	playerSrcRect := ui.textureIndex['@'][0]
 	ui.renderer.Copy(ui.textureAtlas, &playerSrcRect,
 		&sdl.Rect{int32(level.Player.X)*32 + offsetX, int32(level.Player.Y)*32 + offsetY, 32, 32})
@@ -383,6 +394,7 @@ func (ui *ui) Draw(level *Level) {
 
 	ui.renderer.Copy(ui.eventBackground, nil, &sdl.Rect{0, textStartY, textWidth, int32(ui.winHeight) - textStartY})
 
+	// Text events handling
 	i := level.EventPos
 	count := 0
 	_, fontSizeY, _ := ui.fontSmall.SizeUTF8("A") // mosta letters have the same height but there are exceptions
@@ -401,6 +413,14 @@ func (ui *ui) Draw(level *Level) {
 		if i == level.EventPos {
 			break
 		}
+	}
+
+	// Inventory UI
+	items := level.Items[level.Player.Pos]
+	for i, item := range items {
+		itemSrcRect := ui.textureIndex[item.Rune][0]
+		ui.renderer.Copy(ui.textureAtlas, &itemSrcRect,
+			&sdl.Rect{int32(ui.winWidth - 32 - i*32), int32(ui.winHeight) - 32, 32, 32})
 	}
 
 	ui.renderer.Present()
@@ -454,7 +474,7 @@ func (ui *ui) Run() {
 		select {
 		case newLevel, ok := <-ui.levelChan:
 			if ok {
-				switch newLevel.LastEvent{
+				switch newLevel.LastEvent {
 				case Move:
 					playRandomSound(ui.sounds.footsteps, 16)
 				case DoorOpen:
@@ -479,6 +499,9 @@ func (ui *ui) Run() {
 			}
 			if ui.keyDownOnce(sdl.SCANCODE_RIGHT) {
 				input.Typ = Right
+			}
+			if ui.keyDownOnce(sdl.SCANCODE_T) {
+				input.Typ = TakeAll
 			}
 			//if ui.keyboardState[sdl.SCANCODE_S] == 0 && ui.prevKeyboardState[sdl.SCANCODE_S] != 0 {
 			//	input.Typ = Search
