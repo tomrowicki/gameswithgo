@@ -13,6 +13,23 @@ import (
 	"strings"
 )
 
+type mouseState struct {
+	leftButton  bool
+	rightButton bool
+	pos         Pos
+}
+
+func getMouseState() mouseState {
+	mouseX, mouseY, mouseButtonState := sdl.GetMouseState()
+	leftButton := mouseButtonState & sdl.ButtonLMask() // using bitwise op
+	rightButton := mouseButtonState & sdl.ButtonRMask()
+	var result mouseState
+	result.pos = Pos{int(mouseX), int(mouseY)}
+	result.leftButton = !(leftButton == 0)
+	result.rightButton = !(rightButton == 0)
+	return result
+}
+
 type sounds struct {
 	openingDoors []*mix.Chunk
 	footsteps    []*mix.Chunk
@@ -24,7 +41,16 @@ func playRandomSound(chunks []*mix.Chunk, volume int) {
 	chunks[chunkIndex].Play(-1, 0)
 }
 
+type uiState int
+
+const (
+	UIMain uiState = iota
+	UIInventory
+)
+
 type ui struct {
+	state uiState
+
 	sounds sounds
 
 	winWidth  int
@@ -51,7 +77,8 @@ type ui struct {
 	fontMedium *ttf.Font
 	fontLarge  *ttf.Font
 
-	eventBackground *sdl.Texture
+	eventBackground           *sdl.Texture
+	groundInventoryBackground *sdl.Texture
 
 	str2TexSmall map[string]*sdl.Texture
 	str2TexMed   map[string]*sdl.Texture
@@ -60,6 +87,7 @@ type ui struct {
 
 func NewUI(inputChan chan *Input, levelChan chan *Level) *ui {
 	ui := &ui{}
+	ui.state = UIMain
 	ui.str2TexLarge = make(map[string]*sdl.Texture)
 	ui.str2TexMed = make(map[string]*sdl.Texture)
 	ui.str2TexSmall = make(map[string]*sdl.Texture)
@@ -111,6 +139,9 @@ func NewUI(inputChan chan *Input, levelChan chan *Level) *ui {
 	}
 
 	ui.eventBackground = ui.GetSinglePixelTex(sdl.Color{0, 0, 0, 128})
+	ui.eventBackground.SetBlendMode(sdl.BLENDMODE_BLEND)
+
+	ui.groundInventoryBackground = ui.GetSinglePixelTex(sdl.Color{255, 0, 0, 128})
 	ui.eventBackground.SetBlendMode(sdl.BLENDMODE_BLEND)
 
 	err = mix.OpenAudio(22050, mix.DEFAULT_FORMAT, 2, 4096)
@@ -308,6 +339,11 @@ func init() {
 	}
 }
 
+func (ui *ui) DrawInventory(level *Level) {
+	ui.renderer.Copy(ui.groundInventoryBackground, nil,
+		&sdl.Rect{100, 100, 500, 500})
+}
+
 func (ui *ui) Draw(level *Level) {
 
 	if ui.centerX == -1 && ui.centerY == -1 {
@@ -389,12 +425,12 @@ func (ui *ui) Draw(level *Level) {
 	ui.renderer.Copy(ui.textureAtlas, &playerSrcRect,
 		&sdl.Rect{int32(level.Player.X)*32 + offsetX, int32(level.Player.Y)*32 + offsetY, 32, 32})
 
+	// Text events handling
 	textStartY := int32(float64(ui.winHeight) * .68) // allows to add spacing between lines
 	textWidth := int32(float64(ui.winWidth) * .25)
 
 	ui.renderer.Copy(ui.eventBackground, nil, &sdl.Rect{0, textStartY, textWidth, int32(ui.winHeight) - textStartY})
 
-	// Text events handling
 	i := level.EventPos
 	count := 0
 	_, fontSizeY, _ := ui.fontSmall.SizeUTF8("A") // mosta letters have the same height but there are exceptions
@@ -416,14 +452,19 @@ func (ui *ui) Draw(level *Level) {
 	}
 
 	// Inventory UI
+	groundInvStart := int32(float64(ui.winWidth) * .9)
+	groundInvWidth := int32(ui.winWidth) - groundInvStart
+	ui.renderer.Copy(ui.groundInventoryBackground, nil,
+		&sdl.Rect{groundInvStart, int32(ui.winHeight - 32), groundInvWidth, int32(32)})
 	items := level.Items[level.Player.Pos]
 	for i, item := range items {
 		itemSrcRect := ui.textureIndex[item.Rune][0]
-		ui.renderer.Copy(ui.textureAtlas, &itemSrcRect,
-			&sdl.Rect{int32(ui.winWidth - 32 - i*32), int32(ui.winHeight) - 32, 32, 32})
+		ui.renderer.Copy(ui.textureAtlas, &itemSrcRect, ui.getGroundItemRect(i))
 	}
+}
 
-	ui.renderer.Present()
+func (ui *ui) getGroundItemRect(index int) *sdl.Rect {
+	return &sdl.Rect{int32(ui.winWidth - 32 - index*32), int32(ui.winHeight) - 32, 32, 32}
 }
 
 func (ui *ui) keyDownOnce(key uint8) bool {
@@ -450,7 +491,24 @@ func (ui *ui) GetSinglePixelTex(color sdl.Color) *sdl.Texture {
 	return tex
 }
 
+func (ui *ui) CheckItems(prevMouseState, currMouseState mouseState, level *Level) *Item {
+	if !currMouseState.leftButton && prevMouseState.leftButton {
+		items := level.Items[level.Player.Pos]
+		mousePos := currMouseState.pos
+		for i, item := range items {
+			itemRect := ui.getGroundItemRect(i)
+			// checking if click occurs within the item's rect
+			if itemRect.HasIntersection(&sdl.Rect{int32(mousePos.X), int32(mousePos.Y), 1, 1}) {
+				return item
+			}
+		}
+	}
+	return nil
+}
+
 func (ui *ui) Run() {
+	var newLevel *Level
+	prevMouseState := getMouseState()
 	// Comment from YT
 	//I'm not sure if you discover this later, but for the keyboard events: the event has "Type" and "Repeat" members.  So, if "Type" is "sdl.KEYDOWN" and "Repeat" is 0, then this is the initial press of that key.
 	//
@@ -471,8 +529,11 @@ func (ui *ui) Run() {
 			}
 		}
 
+		currMouseState := getMouseState()
+		var input Input
+		var ok bool
 		select {
-		case newLevel, ok := <-ui.levelChan:
+		case newLevel, ok = <-ui.levelChan:
 			if ok {
 				switch newLevel.LastEvent {
 				case Move:
@@ -482,12 +543,25 @@ func (ui *ui) Run() {
 				default:
 					// add more sounds
 				}
-				ui.Draw(newLevel)
 			}
 		default:
 		}
+		ui.Draw(newLevel)
+
+		if ui.state == UIInventory {
+			ui.Draw(newLevel)
+			ui.DrawInventory(newLevel)
+		}
+		ui.renderer.Present()
+
+		item := ui.CheckItems(prevMouseState, currMouseState, newLevel)
+		if item != nil {
+			input.Typ = TakeItem
+			input.Item = item
+		}
+
 		if sdl.GetKeyboardFocus() == ui.window || sdl.GetMouseFocus() == ui.window {
-			var input Input
+
 			if ui.keyDownOnce(sdl.SCANCODE_UP) {
 				input.Typ = Up
 			}
@@ -503,6 +577,13 @@ func (ui *ui) Run() {
 			if ui.keyDownOnce(sdl.SCANCODE_T) {
 				input.Typ = TakeAll
 			}
+			if ui.keyDownOnce(sdl.SCANCODE_I) {
+				if ui.state == UIMain {
+					ui.state = UIInventory
+				} else {
+					ui.state = UIMain
+				}
+			}
 			//if ui.keyboardState[sdl.SCANCODE_S] == 0 && ui.prevKeyboardState[sdl.SCANCODE_S] != 0 {
 			//	input.Typ = Search
 			//}
@@ -516,6 +597,8 @@ func (ui *ui) Run() {
 				ui.inputChan <- &input
 			}
 		}
+		prevMouseState = currMouseState
 		sdl.Delay(20) // CPU is not getting eaten when waiting for inputs
+
 	}
 }

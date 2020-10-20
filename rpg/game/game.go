@@ -40,6 +40,7 @@ const (
 	Left
 	Right
 	TakeAll
+	TakeItem
 	QuitGame
 	CloseWindow
 	Search // temporary
@@ -47,6 +48,7 @@ const (
 
 type Input struct {
 	Typ          InputType
+	Item         *Item
 	LevelChannel chan *Level
 }
 
@@ -106,6 +108,7 @@ const (
 	Attack
 	Hit
 	Portal
+	Pickup
 )
 
 type Level struct {
@@ -525,6 +528,10 @@ func (game *Game) handleInput(input *Input) {
 		for _, item := range level.Items[p.Pos] {
 			level.MoveItem(item, &p.Character)
 		}
+		level.LastEvent = Pickup
+	case TakeItem:
+		level.MoveItem(input.Item, &level.Player.Character)
+		level.LastEvent = Pickup
 	//case Search:
 	//	//bfs(ui, Level, Level.Player.Pos)
 	//	level.astar(level.Player.Pos, Pos{3, 2})
