@@ -2,6 +2,7 @@ package ui2d
 
 import (
 	"bufio"
+	"fmt"
 	. "gameswithgo/rpg/game"
 	"github.com/veandco/go-sdl2/mix"
 	"github.com/veandco/go-sdl2/sdl"
@@ -13,13 +14,15 @@ import (
 	"strings"
 )
 
+const itemSizeRatio = .033
+
 type mouseState struct {
 	leftButton  bool
 	rightButton bool
 	pos         Pos
 }
 
-func getMouseState() mouseState {
+func getMouseState() *mouseState {
 	mouseX, mouseY, mouseButtonState := sdl.GetMouseState()
 	leftButton := mouseButtonState & sdl.ButtonLMask() // using bitwise op
 	rightButton := mouseButtonState & sdl.ButtonRMask()
@@ -27,7 +30,7 @@ func getMouseState() mouseState {
 	result.pos = Pos{int(mouseX), int(mouseY)}
 	result.leftButton = !(leftButton == 0)
 	result.rightButton = !(rightButton == 0)
-	return result
+	return &result
 }
 
 type sounds struct {
@@ -50,6 +53,8 @@ const (
 
 type ui struct {
 	state uiState
+
+	draggedItem *Item
 
 	sounds sounds
 
@@ -83,6 +88,9 @@ type ui struct {
 	str2TexSmall map[string]*sdl.Texture
 	str2TexMed   map[string]*sdl.Texture
 	str2TexLarge map[string]*sdl.Texture
+
+	currMouseState *mouseState
+	prevMouseState *mouseState
 }
 
 func NewUI(inputChan chan *Input, levelChan chan *Level) *ui {
@@ -108,7 +116,7 @@ func NewUI(inputChan chan *Input, levelChan chan *Level) *ui {
 	}
 
 	// bilinear filtering through SDL
-	sdl.SetHint(sdl.HINT_RENDER_SCALE_QUALITY, "1")
+	//sdl.SetHint(sdl.HINT_RENDER_SCALE_QUALITY, "1")
 
 	ui.textureAtlas = ui.imgFileToTexture("rpg/ui2d/assets/tiles.png")
 	ui.loadTextureIndex()
@@ -141,8 +149,8 @@ func NewUI(inputChan chan *Input, levelChan chan *Level) *ui {
 	ui.eventBackground = ui.GetSinglePixelTex(sdl.Color{0, 0, 0, 128})
 	ui.eventBackground.SetBlendMode(sdl.BLENDMODE_BLEND)
 
-	ui.groundInventoryBackground = ui.GetSinglePixelTex(sdl.Color{255, 0, 0, 128})
-	ui.eventBackground.SetBlendMode(sdl.BLENDMODE_BLEND)
+	ui.groundInventoryBackground = ui.GetSinglePixelTex(sdl.Color{149, 84, 19, 128})
+	ui.groundInventoryBackground.SetBlendMode(sdl.BLENDMODE_BLEND)
 
 	err = mix.OpenAudio(22050, mix.DEFAULT_FORMAT, 2, 4096)
 	if err != nil {
@@ -340,8 +348,43 @@ func init() {
 }
 
 func (ui *ui) DrawInventory(level *Level) {
-	ui.renderer.Copy(ui.groundInventoryBackground, nil,
-		&sdl.Rect{100, 100, 500, 500})
+	playerSrcRect := ui.textureIndex[level.Player.Rune][0]
+	invRect := ui.getInventoryRect()
+	ui.renderer.Copy(ui.groundInventoryBackground, nil, invRect)
+	ui.renderer.Copy(ui.textureAtlas, &playerSrcRect, &sdl.Rect{invRect.X + invRect.X/4, invRect.Y, invRect.W / 2, invRect.H / 2})
+
+	for i, item := range level.Player.Items {
+		itemSrcRect := ui.textureIndex[item.Rune][0]
+		if item == ui.draggedItem {
+			itemSize := int32(float32(ui.winWidth) * itemSizeRatio)
+			ui.renderer.Copy(ui.textureAtlas, &itemSrcRect, &sdl.Rect{int32(ui.currMouseState.pos.X), int32(ui.currMouseState.pos.Y), itemSize, itemSize})
+		} else {
+			ui.renderer.Copy(ui.textureAtlas, &itemSrcRect, ui.getInventoryItemRect(i))
+		}
+	}
+}
+
+func (ui *ui) getInventoryRect() *sdl.Rect {
+	invWidth := int32(float32(ui.winWidth) * .40)
+	invHeight := int32(float32(ui.winHeight) * .75)
+	offsetX := (int32(ui.winWidth) - invWidth) / 2
+	offsetY := (int32(ui.winHeight) - invHeight) / 2
+	return &sdl.Rect{offsetX, offsetY, invWidth, invHeight}
+}
+
+func (ui *ui) getInventoryItemRect(i int) *sdl.Rect {
+	invRect := ui.getInventoryRect()
+	itemSize := int32(float32(ui.winWidth) * itemSizeRatio)
+	return &sdl.Rect{invRect.X + int32(i)*itemSize, invRect.Y + invRect.H - itemSize, itemSize, itemSize}
+}
+
+func (ui *ui) CheckDroppedItem(level *Level) *Item {
+	invRect := ui.getInventoryRect()
+	mousePos := ui.currMouseState.pos
+	if invRect.HasIntersection(&sdl.Rect{int32(mousePos.X), int32(mousePos.Y), 1, 1}) {
+		return nil
+	}
+	return ui.draggedItem
 }
 
 func (ui *ui) Draw(level *Level) {
@@ -411,6 +454,7 @@ func (ui *ui) Draw(level *Level) {
 		}
 	}
 
+	// Render Items
 	for pos, items := range level.Items {
 		if level.Map[pos.Y][pos.X].Visible {
 			for _, item := range items {
@@ -421,11 +465,12 @@ func (ui *ui) Draw(level *Level) {
 		}
 	}
 
-	playerSrcRect := ui.textureIndex['@'][0]
+	// Render Player
+	playerSrcRect := ui.textureIndex[level.Player.Rune][0]
 	ui.renderer.Copy(ui.textureAtlas, &playerSrcRect,
 		&sdl.Rect{int32(level.Player.X)*32 + offsetX, int32(level.Player.Y)*32 + offsetY, 32, 32})
 
-	// Text events handling
+	// Events UI
 	textStartY := int32(float64(ui.winHeight) * .68) // allows to add spacing between lines
 	textWidth := int32(float64(ui.winWidth) * .25)
 
@@ -454,8 +499,9 @@ func (ui *ui) Draw(level *Level) {
 	// Inventory UI
 	groundInvStart := int32(float64(ui.winWidth) * .9)
 	groundInvWidth := int32(ui.winWidth) - groundInvStart
+	itemSize := int32(itemSizeRatio * float32(ui.winWidth))
 	ui.renderer.Copy(ui.groundInventoryBackground, nil,
-		&sdl.Rect{groundInvStart, int32(ui.winHeight - 32), groundInvWidth, int32(32)})
+		&sdl.Rect{groundInvStart, int32(ui.winHeight) - itemSize, groundInvWidth, itemSize})
 	items := level.Items[level.Player.Pos]
 	for i, item := range items {
 		itemSrcRect := ui.textureIndex[item.Rune][0]
@@ -464,7 +510,8 @@ func (ui *ui) Draw(level *Level) {
 }
 
 func (ui *ui) getGroundItemRect(index int) *sdl.Rect {
-	return &sdl.Rect{int32(ui.winWidth - 32 - index*32), int32(ui.winHeight) - 32, 32, 32}
+	itemSize := int32(float32(ui.winWidth) * itemSizeRatio)
+	return &sdl.Rect{int32(int32(ui.winWidth) - itemSize - int32(index)*itemSize), int32(ui.winHeight) - itemSize, itemSize, itemSize}
 }
 
 func (ui *ui) keyDownOnce(key uint8) bool {
@@ -491,10 +538,25 @@ func (ui *ui) GetSinglePixelTex(color sdl.Color) *sdl.Texture {
 	return tex
 }
 
-func (ui *ui) CheckItems(prevMouseState, currMouseState mouseState, level *Level) *Item {
-	if !currMouseState.leftButton && prevMouseState.leftButton {
+func (ui *ui) CheckInventoryItems(level *Level) *Item {
+	if ui.currMouseState.leftButton {
+		mousePos := ui.currMouseState.pos
+		for i, item := range level.Player.Items {
+			itemRect := ui.getInventoryItemRect(i)
+			// checking if click occurs within the item's rect
+			if itemRect.HasIntersection(&sdl.Rect{int32(mousePos.X), int32(mousePos.Y), 1, 1}) {
+				fmt.Println("clicked inventory item!")
+				return item
+			}
+		}
+	}
+	return nil
+}
+
+func (ui *ui) CheckGroundItems(level *Level) *Item {
+	if !ui.currMouseState.leftButton && ui.prevMouseState.leftButton {
 		items := level.Items[level.Player.Pos]
-		mousePos := currMouseState.pos
+		mousePos := ui.currMouseState.pos
 		for i, item := range items {
 			itemRect := ui.getGroundItemRect(i)
 			// checking if click occurs within the item's rect
@@ -508,7 +570,7 @@ func (ui *ui) CheckItems(prevMouseState, currMouseState mouseState, level *Level
 
 func (ui *ui) Run() {
 	var newLevel *Level
-	prevMouseState := getMouseState()
+	ui.prevMouseState = getMouseState()
 	// Comment from YT
 	//I'm not sure if you discover this later, but for the keyboard events: the event has "Type" and "Repeat" members.  So, if "Type" is "sdl.KEYDOWN" and "Repeat" is 0, then this is the initial press of that key.
 	//
@@ -529,7 +591,7 @@ func (ui *ui) Run() {
 			}
 		}
 
-		currMouseState := getMouseState()
+		ui.currMouseState = getMouseState()
 		var input Input
 		var ok bool
 		select {
@@ -549,12 +611,25 @@ func (ui *ui) Run() {
 		ui.Draw(newLevel)
 
 		if ui.state == UIInventory {
-			ui.Draw(newLevel)
+			// have we stopped dragging?
+			if ui.draggedItem != nil && !ui.currMouseState.leftButton && ui.prevMouseState.leftButton {
+				item := ui.CheckDroppedItem(newLevel)
+				if item != nil {
+					input.Typ = DropItem
+					input.Item = ui.draggedItem
+					ui.draggedItem = nil
+				}
+			}
+			if ui.currMouseState.leftButton && ui.draggedItem != nil {
+
+			} else {
+				ui.draggedItem = ui.CheckInventoryItems(newLevel)
+			}
 			ui.DrawInventory(newLevel)
 		}
 		ui.renderer.Present()
 
-		item := ui.CheckItems(prevMouseState, currMouseState, newLevel)
+		item := ui.CheckGroundItems(newLevel)
 		if item != nil {
 			input.Typ = TakeItem
 			input.Item = item
@@ -597,7 +672,7 @@ func (ui *ui) Run() {
 				ui.inputChan <- &input
 			}
 		}
-		prevMouseState = currMouseState
+		ui.prevMouseState = ui.currMouseState
 		sdl.Delay(20) // CPU is not getting eaten when waiting for inputs
 
 	}

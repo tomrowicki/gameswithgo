@@ -41,6 +41,7 @@ const (
 	Right
 	TakeAll
 	TakeItem
+	DropItem
 	QuitGame
 	CloseWindow
 	Search // temporary
@@ -109,6 +110,7 @@ const (
 	Hit
 	Portal
 	Pickup
+	Drop
 )
 
 type Level struct {
@@ -121,6 +123,20 @@ type Level struct {
 	EventPos  int
 	Debug     map[Pos]bool
 	LastEvent GameEvent
+}
+
+func (level *Level) DropItem(itemToDrop *Item, character *Character) {
+	pos := character.Pos
+	items := character.Items
+	for i, item := range items {
+		if item == itemToDrop {
+			character.Items = append(character.Items[:i], character.Items[i+1:]...)
+			level.Items[pos] = append(level.Items[pos], item)
+			level.AddEvent(character.Name + " dropped: " + item.Name)
+			return
+		}
+	}
+	panic("tried to drop a remote item")
 }
 
 func (level *Level) MoveItem(itemToMove *Item, character *Character) {
@@ -535,7 +551,11 @@ func (game *Game) handleInput(input *Input) {
 	//case Search:
 	//	//bfs(ui, Level, Level.Player.Pos)
 	//	level.astar(level.Player.Pos, Pos{3, 2})
+	case DropItem:
+		level.DropItem(input.Item, &level.Player.Character)
+		level.LastEvent = Drop
 	case CloseWindow:
+		// FIXME leads to error on quit, every time
 		close(input.LevelChannel)
 		chanIndex := 0
 		for i, c := range game.LevelChans {
