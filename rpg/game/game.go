@@ -42,6 +42,7 @@ const (
 	TakeAll
 	TakeItem
 	DropItem
+	EquipItem
 	QuitGame
 	CloseWindow
 	Search // temporary
@@ -94,6 +95,8 @@ type Character struct {
 	ActionPoints float64
 	SightRange   int
 	Items        []*Item
+	Helmet       *Item
+	Weapon       *Item
 }
 
 type Player struct {
@@ -157,9 +160,18 @@ func (level *Level) MoveItem(itemToMove *Item, character *Character) {
 
 func (level *Level) Attack(c1, c2 *Character) {
 	c1.ActionPoints--
-	c2.Hitpoints -= c1.Strength
+	c1AttackPower := c1.Strength
+	if c1.Weapon != nil {
+		c1AttackPower = int(float64(c1.Strength) * c1.Weapon.Power)
+	}
+	damage := c1AttackPower
+	if c2.Helmet != nil {
+		damage = int(float64(damage) * (1.0 - c2.Helmet.Power))
+	}
+
+	c2.Hitpoints -= damage
 	if c2.Hitpoints > 0 {
-		level.AddEvent(c1.Name + " Attacked " + c2.Name + " for " + strconv.Itoa(c1.Strength))
+		level.AddEvent(c1.Name + " Attacked " + c2.Name + " for " + strconv.Itoa(damage))
 		c2.ActionPoints -= 1
 		c1.Hitpoints -= c2.Strength
 	} else {
@@ -524,6 +536,21 @@ func (game *Game) resolveMovement(pos Pos) {
 	}
 }
 
+func equip(c *Character, itemToEquip *Item) {
+	for i, item := range c.Items {
+		if item == itemToEquip {
+			c.Items = append(c.Items[:i],c.Items[i+1:]...)
+			if itemToEquip.Typ == Helmet {
+				c.Helmet = itemToEquip
+			} else if itemToEquip.Typ == Weapon {
+				c.Weapon = itemToEquip
+			}
+			return
+		}
+	}
+	panic("someone tried to equip a thing they don't have")
+}
+
 func (game *Game) handleInput(input *Input) {
 	level := game.CurrentLevel
 	p := level.Player
@@ -548,6 +575,8 @@ func (game *Game) handleInput(input *Input) {
 	case TakeItem:
 		level.MoveItem(input.Item, &level.Player.Character)
 		level.LastEvent = Pickup
+	case EquipItem:
+		equip(&level.Player.Character, input.Item)
 	//case Search:
 	//	//bfs(ui, Level, Level.Player.Pos)
 	//	level.astar(level.Player.Pos, Pos{3, 2})
