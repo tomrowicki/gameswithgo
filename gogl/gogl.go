@@ -11,8 +11,7 @@ import (
 
 type ShaderID uint32
 type ProgramID uint32
-type VAOID uint32
-type VBOID uint32
+type BufferID uint32
 
 func GetVersion() string {
 	return gl.GoStr(gl.GetString(gl.VERSION))
@@ -23,22 +22,6 @@ type programInfo struct {
 	fragPath string
 
 	modified time.Time
-}
-
-var loadedShaders []programInfo
-
-func CheckShadersForChanges() {
-	//for _, shaderInfo := range loadedShaders {
-	//	file, err := os.Stat(shaderInfo.path)
-	//	if err != nil {
-	//		panic(err)
-	//	}
-	//	modTime := file.ModTime()
-	//	// check if greater than?
-	//	if !modTime.Equal(shaderInfo.modified) {
-	//		fmt.Println("shader modified")
-	//	}
-	//}
 }
 
 func LoadShader(path string, shaderType uint32) (ShaderID, error) {
@@ -103,9 +86,9 @@ func CreateProgram(vertPath string, fragPath string) (ProgramID, error) {
 
 	if success == gl.FALSE {
 		var logLength int32
-		gl.GetProgramiv(shaderProgram,gl.INFO_LOG_LENGTH,&logLength)
+		gl.GetProgramiv(shaderProgram, gl.INFO_LOG_LENGTH, &logLength)
 		log := strings.Repeat("\x00", int(logLength+1))
-		gl.GetProgramInfoLog(shaderProgram,logLength, nil,gl.Str(log))
+		gl.GetProgramInfoLog(shaderProgram, logLength, nil, gl.Str(log))
 		return 0, errors.New("failed to link program:\n" + log)
 	}
 	gl.DeleteShader(uint32(vert))
@@ -122,21 +105,27 @@ func CreateProgram(vertPath string, fragPath string) (ProgramID, error) {
 	return ProgramID(shaderProgram), nil
 }
 
-func GenBindBuffer(target uint32) VBOID {
+func GenBindBuffer(target uint32) BufferID {
 	var VBO uint32 // Vertex Buffer Object
 	gl.GenBuffers(1, &VBO)
 	gl.BindBuffer(target, VBO)
-	return VBOID(target)
+	return BufferID(target)
 }
 
-func GenBindVertexArray() VAOID {
+func GenBindVertexArray() BufferID {
 	var VAO uint32
 	gl.GenVertexArrays(1, &VAO)
 	gl.BindVertexArray(VAO)
-	return VAOID(VAO)
+	return BufferID(VAO)
 }
 
-func BindVertexArray(id VAOID) {
+func GenEBO() BufferID {
+	var EBO uint32
+	gl.GenBuffers(1, &EBO)
+	return BufferID(EBO)
+}
+
+func BindVertexArray(id BufferID) {
 	gl.BindVertexArray(uint32(id))
 }
 
@@ -144,10 +133,14 @@ func BufferDataFloat(target uint32, data []float32, usage uint32) {
 	gl.BufferData(target, len(data)*4, gl.Ptr(data), usage) // 4, as there are 4 bytes making a float32 value
 }
 
+func BufferDataInt(target uint32, data []uint32, usage uint32) {
+	gl.BufferData(target, len(data)*4, gl.Ptr(data), usage) // 4, as there are 4 bytes making a float32 value
+}
+
 func UnbindVertexArray() {
 	gl.BindVertexArray(0)
 }
 
-func UseProgram (id ProgramID) {
+func UseProgram(id ProgramID) {
 	gl.UseProgram(uint32(id))
 }
